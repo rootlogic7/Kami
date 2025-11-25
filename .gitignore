@@ -39,3 +39,7 @@ temp/
 
 # Logs
 *.log
+
+# LoRA's
+loras/
+.safetensors
