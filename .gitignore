@@ -34,6 +34,7 @@ hf_cache/
 *.png
 *.jpg
 output/
+output_images/
 temp/
 
 # Logs

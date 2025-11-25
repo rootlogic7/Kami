@@ -2,6 +2,8 @@ import torch
 from diffusers import StableDiffusionXLPipeline, StableDiffusionXLImg2ImgPipeline, AutoencoderKL
 import os
 import gc
+import re
+from datetime import datetime
 
 class T2IEngine:
     """
@@ -66,10 +68,58 @@ class T2IEngine:
         self.refiner_pipeline.enable_model_cpu_offload()
         print("Refiner Modell geladen.")
 
-    def generate(self, prompt, negative_prompt="", steps=30, guidance_scale=7.5, seed=None, output_path="output.png", use_refiner=False):
+    def _sanitize_prompt(self, prompt, max_len=50):
         """
-        Generiert ein Bild. Wenn use_refiner=True, wird der Prozess aufgeteilt (80% Base, 20% Refiner).
+        Bereinigt den Prompt für die Verwendung als Dateiname:
+        1. Schneidet ihn auf eine maximale Länge (max_len) zu.
+        2. Entfernt unsichere Zeichen.
         """
+        # Nur das erste Segment bis zum ersten Komma oder Punkt nehmen
+        truncated_prompt = prompt.split(',')[0].split('.')[0].strip()
+        
+        # Auf maximale Länge begrenzen
+        if len(truncated_prompt) > max_len:
+            truncated_prompt = truncated_prompt[:max_len]
+        
+        # Nicht alphanumerische Zeichen durch Unterstriche ersetzen
+        sanitized = re.sub(r'[^a-zA-Z0-9]+', '_', truncated_prompt)
+        
+        # Führende/Endende Unterstriche entfernen und alles klein schreiben
+        return sanitized.strip('_').lower()
+
+    def _create_output_path(self, prompt, use_refiner):
+        """
+        Erstellt einen eindeutigen Dateipfad.
+        Struktur: output_images/YYYYMMDD/HHMMSS_sanitized_prompt[_refiner].png
+        """
+        # 1. Bereinigten Namen erstellen
+        sanitized_name = self._sanitize_prompt(prompt)
+        
+        # 2. Zeitstempel
+        now = datetime.now()
+        date_str = now.strftime("%Y%m%d")
+        time_str = now.strftime("%H%M%S")
+        
+        # 3. Dateiname zusammensetzen
+        refiner_suffix = "_refiner" if use_refiner else ""
+        filename = f"{time_str}_{sanitized_name}{refiner_suffix}.png"
+        
+        # 4. Ausgabeordner erstellen
+        output_dir = os.path.join("output_images", date_str)
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # 5. Voller Pfad
+        return os.path.join(output_dir, filename)
+
+
+    def generate(self, prompt, negative_prompt="", steps=30, guidance_scale=7.5, seed=None, use_refiner=False):
+        """
+        Generiert ein Bild und speichert es automatisch in einem strukturierten Pfad.
+        """
+        
+        # NEU: Output-Pfad generieren
+        output_path = self._create_output_path(prompt, use_refiner)
+
         # 1. Base Modell laden
         self.load_base_model()
         
@@ -97,19 +147,17 @@ class T2IEngine:
             ).images[0]
         else:
             # Refiner Modus: "Ensemble of Experts"
-            # High Noise Fraction: Wann übergibt Base an Refiner? 
-            # 0.8 bedeutet: Base macht die ersten 80% (viel Rauschen entfernen), Refiner die letzten 20%.
             high_noise_frac = 0.8
             
-            # Schritt A: Base Model (gibt Latents aus, kein fertiges Bild)
+            # Schritt A: Base Model (gibt Latents aus)
             latents = self.base_pipeline(
                 prompt=prompt,
                 negative_prompt=negative_prompt,
                 num_inference_steps=steps,
                 guidance_scale=guidance_scale,
                 generator=generator,
-                denoising_end=high_noise_frac, # Stoppt bei 80%
-                output_type="latent"           # WICHTIG: Gib rohe Daten zurück
+                denoising_end=high_noise_frac, 
+                output_type="latent"           
             ).images
             
             # Schritt B: Refiner Model (nimmt Latents)
@@ -119,7 +167,7 @@ class T2IEngine:
                 num_inference_steps=steps,
                 guidance_scale=guidance_scale,
                 generator=generator,
-                denoising_start=high_noise_frac, # Startet bei 80%
+                denoising_start=high_noise_frac, 
                 image=latents
             ).images[0]
 

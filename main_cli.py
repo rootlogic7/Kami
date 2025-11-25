@@ -18,9 +18,6 @@ def main():
     parser.add_argument("--steps", type=int, default=30, help="Anzahl der Denoising-Schritte (Qualität)")
     parser.add_argument("--guidance", type=float, default=7.0, help="Wie stark sich das Bild an den Prompt hält (CFG Scale)")
     parser.add_argument("--seed", type=int, default=None, help="Seed für reproduzierbare Ergebnisse")
-    parser.add_argument("--output", type=str, default="output.png", help="Dateiname für das Ergebnis")
-    
-    # NEU: Refiner Switch
     parser.add_argument("--refiner", action="store_true", help="Aktiviert den SDXL Refiner für mehr Details")
     
     args = parser.parse_args()
@@ -34,7 +31,6 @@ def main():
             steps=args.steps,
             guidance_scale=args.guidance,
             seed=args.seed,
-            output_path=args.output,
             use_refiner=args.refiner # Hier übergeben wir den Switch an die Engine
         )
     except KeyboardInterrupt:
