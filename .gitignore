@@ -1,0 +1,40 @@
+# Python Virtual Environment
+venv/
+env/
+.env
+
+# Byte-compiled / optimized / DLL files
+pycache/
+*.py[cod]
+*$py.class
+
+# Distribution / Packaging
+build/
+develop-eggs/
+dist/
+eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Hugging Face Cache
+.cache/
+hf_cache/
+
+# IDE Settings
+.vscode/
+.idea/
+
+# Images
+*.png
+*.jpg
+output/
+temp/
+
+# Logs
+*.log
