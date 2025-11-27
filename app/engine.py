@@ -5,6 +5,8 @@ from diffusers import (
     AutoencoderKL,
     DPMSolverMultistepScheduler
 )
+# WICHTIG: Wir nutzen den spezialisierten Wrapper, um 'empty_z' Fehler zu vermeiden
+from compel import CompelForSDXL
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 import os
@@ -21,7 +23,7 @@ class T2IEngine:
     """
     Core class for Text-to-Image generation using Stable Diffusion XL.
     Handles model loading, memory management, and image generation.
-    Optimized for long prompts and low VRAM (8GB) usage.
+    Uses CompelForSDXL for robust prompt weighting.
     """
     
     def __init__(self, 
@@ -35,6 +37,7 @@ class T2IEngine:
         self.base_pipeline = None
         self.refiner_pipeline = None
         self.vae = None
+        # Wir speichern Compel nicht persistent, um Device-Konflikte bei Offloading zu vermeiden
         
     def _load_vae(self):
         """Loads the VAE separately so it can be shared between Base and Refiner."""
@@ -53,9 +56,8 @@ class T2IEngine:
             raise
 
     def load_base_model(self, lora_path=None):
-        """Loads the Base Pipeline and applies optimizations for 8GB VRAM."""
+        """Loads the Base Pipeline."""
         
-        # Check if reload is necessary due to LoRA state change
         if self.base_pipeline is not None:
             lora_needs_reload = (lora_path and not self.base_pipeline.has_lora) or \
                                 (not lora_path and self.base_pipeline.has_lora)
@@ -68,7 +70,6 @@ class T2IEngine:
         logger.info(f"Loading Base Model: {self.base_model_id}...")
         vae = self._load_vae()
 
-        # Load pipeline based on file type
         if self.base_model_id.endswith(".safetensors") or self.base_model_id.endswith(".ckpt"):
             logger.info("Detected local checkpoint file. Using 'from_single_file'...")
             self.base_pipeline = StableDiffusionXLPipeline.from_single_file(
@@ -87,27 +88,24 @@ class T2IEngine:
             )
         
         # --- Optimizations ---
-        # 1. Scheduler: DPM++ 2M Karras
         self.base_pipeline.scheduler = DPMSolverMultistepScheduler.from_config(
             self.base_pipeline.scheduler.config,
             use_karras_sigmas=True,
             algorithm_type="dpmsolver++"
         )
 
-        # 2. VAE Optimizations (Crucial for OOM prevention)
         self.base_pipeline.enable_vae_tiling()
         self.base_pipeline.enable_vae_slicing()
         
-        # 3. Memory Efficient Attention
         if torch.cuda.is_available():
             try:
                 self.base_pipeline.enable_xformers_memory_efficient_attention()
             except Exception:
                 self.base_pipeline.enable_attention_slicing()
 
-        # 4. Low VRAM Strategy: Sequential CPU Offload
-        self.base_pipeline.enable_sequential_cpu_offload()
-        logger.info("Enabled sequential CPU offload for low VRAM.")
+        # Enable offloading (Crucial for 8GB)
+        self.base_pipeline.enable_model_cpu_offload()
+        logger.info("Enabled model CPU offload.")
 
         # LoRA Handling
         self.base_pipeline.has_lora = False
@@ -116,10 +114,10 @@ class T2IEngine:
             self.base_pipeline.load_lora_weights(lora_path)
             self.base_pipeline.has_lora = True
 
-        logger.info("Base Model loaded and optimized successfully.")
+        logger.info("Base Model loaded successfully.")
 
     def load_refiner_model(self):
-        """Loads the Refiner Pipeline if not already active."""
+        """Loads the Refiner Pipeline."""
         if self.refiner_pipeline is not None:
             return
 
@@ -136,9 +134,8 @@ class T2IEngine:
         self.refiner_pipeline.enable_vae_tiling()
         self.refiner_pipeline.enable_vae_slicing()
         
-        # Apply strict offloading to refiner as well
-        self.refiner_pipeline.enable_sequential_cpu_offload()
-        logger.info("Refiner Model loaded successfully with sequential offload.")
+        self.refiner_pipeline.enable_model_cpu_offload() 
+        logger.info("Refiner Model loaded successfully.")
 
     def _sanitize_prompt(self, prompt, max_len=120):
         """Sanitizes the prompt for filename usage."""
@@ -170,111 +167,22 @@ class T2IEngine:
         os.makedirs(output_dir, exist_ok=True)
         return os.path.join(output_dir, filename)
 
-    def get_long_prompt_embeds(self, pipeline, prompt, negative_prompt):
-        """
-        Calculates embeddings for long prompts with memory safety.
-        Assumes implicit torch.no_grad() context from caller.
-        """
-        if not prompt: prompt = ""
-        if not negative_prompt: negative_prompt = ""
-
-        tokenizers = [pipeline.tokenizer, pipeline.tokenizer_2] if hasattr(pipeline, "tokenizer_2") else [pipeline.tokenizer]
-        text_encoders = [pipeline.text_encoder, pipeline.text_encoder_2] if hasattr(pipeline, "text_encoder_2") else [pipeline.text_encoder]
-
-        # 1. Tokenize (CPU is fine for this)
-        def tokenize(tokenizer, text):
-            return tokenizer(text, return_tensors="pt", truncation=False).input_ids.to(self.device)
-
-        input_ids_list_pos = []
-        input_ids_list_neg = []
-        
-        for tokenizer in tokenizers:
-            input_ids_list_pos.append(tokenize(tokenizer, prompt))
-            input_ids_list_neg.append(tokenize(tokenizer, negative_prompt))
-
-        # 2. Determine max length and target length
-        max_len = 0
-        for ids in input_ids_list_pos + input_ids_list_neg:
-            if ids.shape[-1] > max_len: max_len = ids.shape[-1]
-
-        target_len = 77
-        if max_len > 77:
-            target_len = math.ceil(max_len / 77) * 77
-
-        # 3. Helper to pad and encode
-        def encode_padded(tokenizer, text_encoder, input_ids, target_length):
-            curr_len = input_ids.shape[-1]
-            if curr_len < target_length:
-                pad_len = target_length - curr_len
-                pad_tensor = torch.full((1, pad_len), tokenizer.pad_token_id, dtype=torch.long, device=self.device)
-                input_ids = torch.cat([input_ids, pad_tensor], dim=1)
-            
-            embeds = []
-            for i in range(0, target_length, 77):
-                chunk = input_ids[:, i:i+77]
-                out = text_encoder(chunk, output_hidden_states=True)
-                embeds.append(out.hidden_states[-2])
-            
-            return torch.cat(embeds, dim=1)
-
-        # 4. Process embeddings
-        prompt_embeds_list = []
-        neg_embeds_list = []
-
-        for i, (tokenizer, text_encoder) in enumerate(zip(tokenizers, text_encoders)):
-            pos_emb = encode_padded(tokenizer, text_encoder, input_ids_list_pos[i], target_len)
-            prompt_embeds_list.append(pos_emb)
-            
-            neg_emb = encode_padded(tokenizer, text_encoder, input_ids_list_neg[i], target_len)
-            neg_embeds_list.append(neg_emb)
-            
-            # Memory Cleanup after each encoder usage
-            gc.collect()
-            torch.cuda.empty_cache()
-
-        if len(prompt_embeds_list) == 2:
-            prompt_embeds = torch.cat([prompt_embeds_list[0], prompt_embeds_list[1]], dim=-1)
-            negative_prompt_embeds = torch.cat([neg_embeds_list[0], neg_embeds_list[1]], dim=-1)
-        else:
-            prompt_embeds = prompt_embeds_list[0]
-            negative_prompt_embeds = neg_embeds_list[0]
-
-        # 5. Pooled Embeddings
-        tokenizer_2 = pipeline.tokenizer_2 if hasattr(pipeline, "tokenizer_2") else pipeline.tokenizer
-        text_encoder_2 = pipeline.text_encoder_2 if hasattr(pipeline, "text_encoder_2") else pipeline.text_encoder
-        
-        def get_pooled(txt):
-            inputs = tokenizer_2(txt, padding="max_length", max_length=77, truncation=True, return_tensors="pt").to(self.device)
-            return text_encoder_2(inputs.input_ids, output_hidden_states=True).text_embeds
-        
-        pooled_pos = get_pooled(prompt)
-        pooled_neg = get_pooled(negative_prompt)
-
-        # Final cleanup
-        gc.collect()
-        torch.cuda.empty_cache()
-        
-        return prompt_embeds, negative_prompt_embeds, pooled_pos, pooled_neg
-
     def generate(self, prompt, negative_prompt="", steps=30, guidance_scale=7.5, seed=None, 
                  use_refiner=False, lora_path=None, lora_scale=1.0, 
                  freeu_args=None):
         """
-        Generates an image from the prompt. 
-        Supports FreeU via freeu_args (dict).
+        Generates an image from the prompt using CompelForSDXL.
+        Includes robust device handling to fix 'Index on CPU' and 'empty_z' errors.
         """
         output_path = self._create_output_path(prompt, use_refiner, lora_path)
 
-        # Ensure required models are loaded
         self.load_base_model(lora_path=lora_path) 
         if use_refiner:
             self.load_refiner_model()
 
-        # Apply FreeU settings dynamically
+        # Apply FreeU
         if freeu_args:
             logger.info(f"Enabling FreeU with args: {freeu_args}")
-            # s1: stage 1 backbone factor, s2: stage 2 backbone factor
-            # b1: stage 1 skip factor, b2: stage 2 skip factor
             self.base_pipeline.enable_freeu(
                 s1=freeu_args.get('s1', 0.9), 
                 s2=freeu_args.get('s2', 0.2), 
@@ -282,7 +190,6 @@ class T2IEngine:
                 b2=freeu_args.get('b2', 1.4)
             )
         else:
-            # Disable FreeU if not requested
             self.base_pipeline.disable_freeu()
 
         if seed is None:
@@ -296,25 +203,51 @@ class T2IEngine:
         
         try:
             with torch.no_grad():
-                # --- Handle Long Prompts ---
-                pos_embeds, neg_embeds, pooled_pos, pooled_neg = self.get_long_prompt_embeds(
-                    self.base_pipeline, prompt, negative_prompt
-                )
+                # --- MANUAL DEVICE MANAGEMENT START ---
+                # 1. Force Text Encoders to GPU.
+                # Because we use 'enable_model_cpu_offload', the encoders are normally on CPU.
+                # Compel needs them on GPU to work correctly.
+                logger.debug("Moving text encoders to GPU for Compel...")
+                self.base_pipeline.text_encoder.to(self.device)
+                self.base_pipeline.text_encoder_2.to(self.device)
+
+                # 2. Initialize CompelForSDXL FRESH.
+                # We pass the pipeline (now with GPU encoders), so Compel correctly detects CUDA.
+                # This fixes "Index on CPU" errors.
+                # Using CompelForSDXL fixes "empty_z" errors.
+                compel = CompelForSDXL(self.base_pipeline)
+
+                # 3. Generate Embeddings
+                # CompelForSDXL returns a wrapper object with all necessary tensors.
+                conditioning = compel(prompt, negative_prompt=negative_prompt)
+                
+                # Extract tensors (they will be on CUDA because encoders were on CUDA)
+                pos_embeds = conditioning.embeds
+                pooled_pos = conditioning.pooled_embeds
+                neg_embeds = conditioning.negative_embeds
+                pooled_neg = conditioning.negative_pooled_embeds
+
+                # 4. Cleanup: Move encoders back to CPU to free VRAM for the UNet
+                logger.debug("Moving text encoders back to CPU...")
+                self.base_pipeline.text_encoder.to("cpu")
+                self.base_pipeline.text_encoder_2.to("cpu")
+                
+                # Explicit cleanup of Compel
+                del compel
+                gc.collect()
+                torch.cuda.empty_cache()
+                # --- MANUAL DEVICE MANAGEMENT END ---
 
                 cross_attn_kwargs = {}
                 if self.base_pipeline.has_lora:
                     cross_attn_kwargs["scale"] = lora_scale
 
-                # --- Final Pre-Generation Cleanup ---
-                gc.collect()
-                torch.cuda.empty_cache()
-
                 # --- Inference Process ---
                 if not use_refiner:
                     image = self.base_pipeline(
                         prompt_embeds=pos_embeds,
-                        negative_prompt_embeds=neg_embeds,
                         pooled_prompt_embeds=pooled_pos,
+                        negative_prompt_embeds=neg_embeds,
                         negative_pooled_prompt_embeds=pooled_neg,
                         num_inference_steps=steps,
                         guidance_scale=guidance_scale,
@@ -326,8 +259,8 @@ class T2IEngine:
                     
                     latents = self.base_pipeline(
                         prompt_embeds=pos_embeds,
-                        negative_prompt_embeds=neg_embeds,
                         pooled_prompt_embeds=pooled_pos,
+                        negative_prompt_embeds=neg_embeds,
                         negative_pooled_prompt_embeds=pooled_neg,
                         num_inference_steps=steps,
                         guidance_scale=guidance_scale,
@@ -337,12 +270,8 @@ class T2IEngine:
                         cross_attention_kwargs=cross_attn_kwargs if self.base_pipeline.has_lora else None
                     ).images
                     
-                    # Manual cleanup between Base and Refiner
                     gc.collect()
                     torch.cuda.empty_cache()
-                    
-                    # Note: FreeU is usually not applied to Refiner in this workflow to keep style consistent
-                    # But can be added if desired.
                     
                     image = self.refiner_pipeline(
                         prompt=prompt,
