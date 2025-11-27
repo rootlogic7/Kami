@@ -48,3 +48,10 @@ models/loras/
 
 # Prompts
 favorites.json
+
+# Configuration & Session
+session_config.json
+app.log
+
+# Python Cache in subdirectories
+app/__pycache__/
