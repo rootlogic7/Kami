@@ -9,7 +9,7 @@ from rich import box
 from rich.prompt import Prompt, FloatPrompt, IntPrompt, Confirm
 
 from app.engine import T2IEngine
-from app.config import SessionConfig
+from app.config import SessionConfig, STYLES
 # Updated imports to include new metadata functions
 from app.utils import (
     print_image_preview, 
@@ -71,29 +71,16 @@ def select_file_from_list(file_type, current_path, directory, hf_allowed=False):
     return current_path
 
 def display_image_with_metadata(image_path: str):
-    """
-    Helper function to clear screen, show image, and print metadata.
-    """
+    """Helper function to clear screen, show image, and print metadata."""
     clear_screen()
     console.print(Panel(f"[bold cyan]Image Viewer:[/bold cyan] {os.path.basename(image_path)}", box=box.DOUBLE))
-    
-    # 1. Render Image (Ghostty/Kitty)
     print_image_preview(image_path)
-    
-    # 2. Retrieve and show Metadata
     meta = get_image_metadata(image_path)
     params = meta.get("parameters", "No parameters found.")
-    
     console.print(Panel(params, title="Metadata / Parameters", border_style="green", box=box.ROUNDED))
 
 def handle_gallery_menu(pre_filtered_images=None, title="Gallery"):
-    """
-    Interactive gallery to browse generated images.
-    
-    Args:
-        pre_filtered_images (list): Optional list of paths to show. If None, shows all.
-        title (str): Title for the gallery header.
-    """
+    """Interactive gallery to browse generated images."""
     if pre_filtered_images is not None:
         images = pre_filtered_images
     else:
@@ -117,16 +104,73 @@ def handle_gallery_menu(pre_filtered_images=None, title="Gallery"):
         if choice == "q":
             break
         elif choice == "n":
-            if current_idx < len(images) - 1:
-                current_idx += 1
-            else:
-                console.print("[yellow]End of gallery. Looping to start.[/yellow]")
-                current_idx = 0
+            current_idx = (current_idx + 1) if current_idx < len(images) - 1 else 0
         elif choice == "p":
-            if current_idx > 0:
-                current_idx -= 1
-            else:
-                current_idx = len(images) - 1
+            current_idx = (current_idx - 1) if current_idx > 0 else len(images) - 1
+
+def select_style_menu(config):
+    """Menu to select a prompt style preset."""
+    console.print(f"\n[bold cyan]--- Style Selection ---[/bold cyan]")
+    
+    # Create a list from keys to ensure order
+    style_keys = list(STYLES.keys())
+    
+    table = Table(show_header=True, box=box.SIMPLE)
+    table.add_column("ID", style="cyan", width=4)
+    table.add_column("Style Name", style="bold yellow")
+    table.add_column("Description (Positive)", style="dim white")
+    
+    for i, key in enumerate(style_keys, 1):
+        s_name = STYLES[key]["name"]
+        s_desc = STYLES[key]["pos"][:50] + "..." if STYLES[key]["pos"] else "Raw input"
+        
+        # Mark current style
+        if key == config.current_style:
+            s_name = f"✅ {s_name}"
+            
+        table.add_row(str(i), s_name, s_desc)
+    
+    console.print(table)
+    choice = Prompt.ask("Select Style ID", default="1")
+    
+    if choice.isdigit():
+        idx = int(choice) - 1
+        if 0 <= idx < len(style_keys):
+            config.current_style = style_keys[idx]
+            console.print(f"[green]Style set to: {config.current_style}[/green]")
+
+def configure_freeu_menu(config):
+    """Menu to toggle and configure FreeU parameters."""
+    console.print(f"\n[bold cyan]--- FreeU Configuration ---[/bold cyan]")
+    console.print("FreeU improves quality by re-weighting U-Net features.\n")
+    
+    if config.use_freeu:
+        console.print(f"Status: [bold green]ON[/bold green]")
+    else:
+        console.print(f"Status: [bold red]OFF[/bold red]")
+        
+    console.print(f"Current Settings: {config.freeu_args}")
+    
+    console.print("\n[1] Toggle On/Off")
+    console.print("[2] Edit Parameters")
+    console.print("[0] Back")
+    
+    choice = Prompt.ask("Choice", default="0")
+    
+    if choice == '1':
+        config.use_freeu = not config.use_freeu
+        console.print(f"FreeU is now {'Enabled' if config.use_freeu else 'Disabled'}")
+    
+    elif choice == '2':
+        console.print("[dim]Recommended ranges: b1/b2 (1.0-1.6), s1/s2 (0.0-1.0)[/dim]")
+        try:
+            config.freeu_args['b1'] = FloatPrompt.ask("b1 (Backbone 1)", default=config.freeu_args['b1'])
+            config.freeu_args['b2'] = FloatPrompt.ask("b2 (Backbone 2)", default=config.freeu_args['b2'])
+            config.freeu_args['s1'] = FloatPrompt.ask("s1 (Skip 1)", default=config.freeu_args['s1'])
+            config.freeu_args['s2'] = FloatPrompt.ask("s2 (Skip 2)", default=config.freeu_args['s2'])
+            config.use_freeu = True # Auto-enable on edit
+        except ValueError:
+            console.print("[red]Invalid input[/red]")
 
 def print_header(config):
     clear_screen()
@@ -138,11 +182,19 @@ def print_header(config):
     m_name = os.path.basename(config.model_path) if config.model_path.lower().endswith((".safetensors", ".ckpt")) else config.model_path
     if len(m_name) > 40: m_name = m_name[:17] + "..." + m_name[-20:]
     l_name = os.path.basename(config.lora_path) if config.lora_path else 'None'
+    
+    # Status Indicators
+    refiner_status = "[green]ON[/green]" if config.use_refiner else "[dim]OFF[/dim]"
+    pony_status = "[magenta]🦄 ON[/magenta]" if config.pony_mode else "[dim]OFF[/dim]"
+    freeu_status = "[green]ON[/green]" if config.use_freeu else "[dim]OFF[/dim]"
+    style_name = STYLES.get(config.current_style, {}).get("name", config.current_style)
 
     table.add_row("Model", m_name, "[M]")
     table.add_row("LoRA", f"{l_name} (Scale: {config.lora_scale})", "[L]")
-    table.add_row("Refiner", "ON" if config.use_refiner else "OFF", "[R]")
-    table.add_row("Pony Mode", "🦄 ON" if config.pony_mode else "OFF", "[P]")
+    table.add_row("Refiner", refiner_status, "[R]")
+    table.add_row("Pony Mode", pony_status, "[P]")
+    table.add_row("FreeU", freeu_status, "[U]")
+    table.add_row("Style", style_name, "[S]")
     table.add_section()
     table.add_row("Steps", str(config.steps), "[1]")
     table.add_row("Guidance", str(config.guidance), "[2]")
@@ -190,16 +242,12 @@ def handle_favorites_menu(config):
             except: pass
 
         elif choice == 'v':
-            # NEW: View images associated with a favorite
             try:
                 idx = IntPrompt.ask("Number to view images for") - 1
                 if 0 <= idx < len(config.favourites):
                     fav = config.favourites[idx]
                     console.print(f"[dim]Searching images for: {fav['name']}...[/dim]")
-                    
-                    # Search images by prompt content
                     found_images = find_images_by_prompt_content(fav['prompt'])
-                    
                     if found_images:
                         handle_gallery_menu(found_images, title=f"Images for: {fav['name']}")
                     else:
@@ -263,6 +311,11 @@ def main():
                 if new_lora: config.lora_scale = FloatPrompt.ask("LoRA Scale", default=config.lora_scale)
 
         elif choice == 'r': config.use_refiner = not config.use_refiner
+        
+        # New Feature Menus
+        elif choice == 's': select_style_menu(config)
+        elif choice == 'u': configure_freeu_menu(config)
+        
         elif choice == 'p': 
             config.pony_mode = not config.pony_mode
             if config.pony_mode and "score_4" not in config.neg_prompt: config.neg_prompt = config.pony_neg + config.neg_prompt
@@ -298,26 +351,54 @@ def main():
                     logger.error(f"Failed to load model: {e}")
                     console.print(f"[red]Error loading model: {e}[/red]"); input(); continue
 
-            final_prompt = (config.pony_prefix + prompt_input) if config.pony_mode else prompt_input
+            # --- Prompt Assembly Logic ---
+            final_prompt = prompt_input
+            final_neg = config.neg_prompt
+
+            # 1. Apply Styles
+            style_data = STYLES.get(config.current_style)
+            if style_data and config.current_style != "None":
+                # Prefix positive, Append negative
+                final_prompt = f"{style_data['pos']}{final_prompt}"
+                final_neg = f"{style_data['neg']}{final_neg}"
+
+            # 2. Apply Pony Prefixes
+            if config.pony_mode:
+                 final_prompt = config.pony_prefix + final_prompt
+
             console.print(f"\n[dim]Generating...[/dim]")
             logger.info(f"Starting generation. Prompt: {final_prompt[:50]}...")
             
             try:
-                saved_path = engine.generate(final_prompt, config.neg_prompt, config.steps, config.guidance, config.seed, config.use_refiner, config.lora_path, config.lora_scale)
+                # Pass FreeU config if enabled
+                freeu_settings = config.freeu_args if config.use_freeu else None
+                
+                saved_path = engine.generate(
+                    prompt=final_prompt, 
+                    negative_prompt=final_neg, 
+                    steps=config.steps, 
+                    guidance_scale=config.guidance, 
+                    seed=config.seed, 
+                    use_refiner=config.use_refiner, 
+                    lora_path=config.lora_path, 
+                    lora_scale=config.lora_scale,
+                    freeu_args=freeu_settings  # New argument
+                )
                 console.print(f"[bold green]✅ Saved:[/bold green] {saved_path}")
                 
                 # Show immediate preview with metadata summary
                 display_image_with_metadata(saved_path)
 
                 if Confirm.ask("Save as favorite?", default=False):
-                    exists = any(f['prompt'] == final_prompt for f in config.favourites)
+                    # Save the raw input prompt, not the styled one, so styles can be swapped later
+                    exists = any(f['prompt'] == prompt_input for f in config.favourites)
                     if exists:
                         console.print("[yellow]Prompt already in favorites.[/yellow]")
                     else:
                         fav_name = Prompt.ask("Name (optional)").strip()
-                        if not fav_name: fav_name = final_prompt[:25].strip() + "..."
+                        if not fav_name: fav_name = prompt_input[:25].strip() + "..."
                         
-                        config.favourites.append({"name": fav_name, "prompt": final_prompt})
+                        config.favourites.append({"name": fav_name, "prompt": prompt_input})
                         config.save_favorites()
                         console.print(f"[green]⭐ Saved as '{fav_name}'![/green]")
                 

@@ -8,6 +8,10 @@ NC='\033[0m' # No Color
 
 echo -e "${GREEN}🚀 Starting Local T2I Generator...${NC}"
 
+# 0. Speicher-Optimierung für PyTorch
+# Verhindert Speicher-Fragmentierung (Updated variable name)
+export PYTORCH_ALLOC_CONF=expandable_segments:True
+
 # 1. Prüfen, ob wir im richtigen Verzeichnis sind
 if [ ! -f "interactive.py" ]; then
     echo -e "${RED}Error: interactive.py not found!${NC}"

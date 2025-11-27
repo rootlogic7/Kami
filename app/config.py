@@ -1,13 +1,48 @@
 import os
 import json
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 # Constants
 FAV_FILE = "favorites.json"
 SESSION_FILE = "session_config.json"
 
 logger = logging.getLogger(__name__)
+
+# --- New Styles Preset Library ---
+# These styles act as prefixes/suffixes to the user prompt
+STYLES = {
+    "None": {
+        "name": "No Style",
+        "pos": "",
+        "neg": ""
+    },
+    "Cinematic": {
+        "name": "Cinematic (Movies)",
+        "pos": "cinematic shot, dynamic lighting, 70mm, depth of field, color graded, ",
+        "neg": "cartoon, illustration, flat, 3d render, "
+    },
+    "Anime": {
+        "name": "Anime (Modern)",
+        "pos": "anime style, key visual, vibrant, studio ghibli, makoto shinkai, ",
+        "neg": "photo, realistic, 3d, "
+    },
+    "Photographic": {
+        "name": "Photorealistic",
+        "pos": "raw photo, 8k uhd, dslr, soft lighting, high quality, film grain, Fujifilm XT3, ",
+        "neg": "drawing, painting, illustration, glitch, deformed, "
+    },
+    "Digital Art": {
+        "name": "Digital Art",
+        "pos": "concept art, digital painting, mystery, elegant, highly detailed, artstation, ",
+        "neg": "photo, realistic, grain, "
+    },
+    "Pixel Art": {
+        "name": "Pixel Art",
+        "pos": "pixel art, 16-bit, retro game, dithering, ",
+        "neg": "blur, vector, smooth, realistic, "
+    }
+}
 
 class SessionConfig:
     """
@@ -27,6 +62,13 @@ class SessionConfig:
         self.lora_path = None
         self.lora_scale = 0.8
         
+        # New Settings
+        self.current_style = "None" # Key from STYLES dict
+        
+        # FreeU Settings (s1, s2, b1, b2) - Default SDXL parameters
+        self.use_freeu = False
+        self.freeu_args = {"s1": 0.9, "s2": 0.2, "b1": 1.3, "b2": 1.4}
+        
         # Pony Diffusion specific settings
         self.pony_mode = False 
         self.pony_prefix = "score_9, score_8_up, score_7_up, score_6_up, source_anime, "
@@ -44,13 +86,11 @@ class SessionConfig:
                     data = json.load(f)
                     migrated = []
                     for item in data:
-                        # Migration: Old string entry -> New object format
                         if isinstance(item, str):
                             migrated.append({
                                 "name": item[:25].strip() + "...", 
                                 "prompt": item
                             })
-                        # Already in new format
                         elif isinstance(item, dict) and "prompt" in item:
                             if "name" not in item: item["name"] = "Untitled"
                             migrated.append(item)
@@ -74,7 +114,6 @@ class SessionConfig:
             try:
                 with open(SESSION_FILE, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                    # Update attributes if they exist in the loaded data
                     self.steps = data.get("steps", self.steps)
                     self.guidance = data.get("guidance", self.guidance)
                     self.neg_prompt = data.get("neg_prompt", self.neg_prompt)
@@ -83,6 +122,13 @@ class SessionConfig:
                     self.lora_scale = data.get("lora_scale", self.lora_scale)
                     self.use_refiner = data.get("use_refiner", self.use_refiner)
                     self.pony_mode = data.get("pony_mode", self.pony_mode)
+                    
+                    # Load new fields
+                    self.current_style = data.get("current_style", self.current_style)
+                    self.use_freeu = data.get("use_freeu", self.use_freeu)
+                    if "freeu_args" in data:
+                        self.freeu_args = data["freeu_args"]
+
             except Exception as e:
                 logger.warning(f"Could not load session config: {e}")
 
@@ -96,7 +142,10 @@ class SessionConfig:
             "lora_path": self.lora_path,
             "lora_scale": self.lora_scale,
             "use_refiner": self.use_refiner,
-            "pony_mode": self.pony_mode
+            "pony_mode": self.pony_mode,
+            "current_style": self.current_style,
+            "use_freeu": self.use_freeu,
+            "freeu_args": self.freeu_args
         }
         try:
             with open(SESSION_FILE, 'w', encoding='utf-8') as f:
