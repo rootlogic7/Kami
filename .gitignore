@@ -57,3 +57,6 @@ app.log
 # Python Cache
 __pycache__/
 app/__pycache__/
+
+# db
+library.db

@@ -7,3 +7,4 @@ argparse
 peft
 rich
 compel>=2.0.0
+PyQt6
