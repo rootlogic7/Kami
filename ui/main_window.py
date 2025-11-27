@@ -17,7 +17,8 @@ from app.engine import T2IEngine
 from app.config import SessionConfig, STYLES
 from app.utils import get_file_list
 from app.style import get_stylesheet, CAT_COLORS
-from app.database import get_filtered_images, get_all_models
+# NEU: Import von delete_image_record
+from app.database import get_filtered_images, get_all_models, delete_image_record
 
 from ui.workers import GeneratorWorker, DBScannerWorker, ThumbnailLoader
 from ui.widgets import ClickableLabel, setup_combo_view, ImageViewerDialog
@@ -37,7 +38,6 @@ class MainWindow(QMainWindow):
         self.input_img_pil = None
         self.threadpool = QThreadPool()
         
-        # Galerie Status Variablen
         self.gallery_results = []       
         self.gallery_page_size = 50     
         self.gallery_current_page = 0 
@@ -64,7 +64,7 @@ class MainWindow(QMainWindow):
         return btn
 
     def init_ui(self):
-        # === MAIN LAYOUT (Vertical) ===
+        # === MAIN LAYOUT ===
         central = QWidget()
         self.setCentralWidget(central)
         main_layout = QVBoxLayout(central)
@@ -79,13 +79,11 @@ class MainWindow(QMainWindow):
         nav_layout.setContentsMargins(20, 0, 20, 0)
         nav_layout.setSpacing(10)
 
-        # Nav Buttons
         self.btn_nav_gen = self.create_nav_btn("Generate", "fa5s.magic")
         self.btn_nav_models = self.create_nav_btn("Models", "fa5s.sliders-h")
         self.btn_nav_favs = self.create_nav_btn("Favorites", "fa5s.star")
         self.btn_nav_gallery = self.create_nav_btn("Gallery", "fa5s.images")
 
-        # Exclusive Button Group
         self.nav_group = QButtonGroup(self)
         self.nav_group.addButton(self.btn_nav_gen, 0)
         self.nav_group.addButton(self.btn_nav_models, 1)
@@ -105,13 +103,11 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         main_layout.addWidget(self.stack)
 
-        # --- INIT PAGES ---
         self.init_page_gen()
         self.init_page_models()
         self.init_page_favs()
         self.init_page_gallery()
 
-        # Set Start Page
         self.btn_nav_gen.setChecked(True)
         self.stack.setCurrentIndex(0)
 
@@ -120,9 +116,7 @@ class MainWindow(QMainWindow):
         if id == 3: self.refresh_gallery_view()
         if id == 2: self.refresh_favorites_list()
 
-    # ==========================
-    # PAGE 1: GENERATE
-    # ==========================
+    # --- PAGE 1: GENERATE ---
     def init_page_gen(self):
         page = QWidget()
         layout = QHBoxLayout(page)
@@ -131,7 +125,6 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setHandleWidth(2)
         
-        # --- LEFT CONTROLS ---
         controls_container = QWidget()
         controls_container.setMinimumWidth(400)
         controls_container.setMaximumWidth(500)
@@ -139,14 +132,12 @@ class MainWindow(QMainWindow):
         c_layout.setContentsMargins(15, 15, 15, 15)
         c_layout.setSpacing(15)
 
-        # Scroll Area for Controls
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll_content = QWidget()
         sc_layout = QVBoxLayout(scroll_content)
         
-        # Mode
         mode_layout = QHBoxLayout()
         self.btn_mode_t2i = QPushButton(" Text to Image")
         self.btn_mode_t2i.setIcon(qta.icon('fa5s.pen'))
@@ -163,7 +154,6 @@ class MainWindow(QMainWindow):
         mode_layout.addWidget(self.btn_mode_i2i)
         sc_layout.addLayout(mode_layout)
 
-        # I2I Group
         self.i2i_group = QGroupBox("Input Image")
         i2i_layout = QVBoxLayout(self.i2i_group)
         self.lbl_input_preview = QLabel("Drop or Load Image")
@@ -189,7 +179,6 @@ class MainWindow(QMainWindow):
         sc_layout.addWidget(self.i2i_group)
         self.i2i_group.setVisible(False)
 
-        # Prompts
         sc_layout.addWidget(QLabel("Positive Prompt"))
         self.txt_prompt = QTextEdit()
         self.txt_prompt.setPlaceholderText("A majestic lion in the sunset...")
@@ -201,7 +190,6 @@ class MainWindow(QMainWindow):
         self.txt_neg.setMaximumHeight(60)
         sc_layout.addWidget(self.txt_neg)
 
-        # Parameters
         p_group = QGroupBox("Parameters")
         p_layout = QGridLayout(p_group)
         p_layout.addWidget(QLabel("Steps:"), 0, 0)
@@ -233,7 +221,6 @@ class MainWindow(QMainWindow):
         scroll.setWidget(scroll_content)
         c_layout.addWidget(scroll)
 
-        # Generate Button Area
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         self.progress_bar.setFixedHeight(5)
@@ -249,7 +236,6 @@ class MainWindow(QMainWindow):
         self.btn_generate.clicked.connect(self.start_generation)
         c_layout.addWidget(self.btn_generate)
 
-        # --- RIGHT PREVIEW ---
         preview_container = QWidget()
         pc_layout = QVBoxLayout(preview_container)
         pc_layout.setContentsMargins(20, 20, 20, 20)
@@ -281,9 +267,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(splitter)
         self.stack.addWidget(page)
 
-    # ==========================
-    # PAGE 2: MODELS
-    # ==========================
+    # --- PAGE 2: MODELS ---
     def init_page_models(self):
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -340,9 +324,7 @@ class MainWindow(QMainWindow):
         layout.addStretch()
         self.stack.addWidget(page)
 
-    # ==========================
-    # PAGE 3: FAVORITES
-    # ==========================
+    # --- PAGE 3: FAVORITES ---
     def init_page_favs(self):
         page = QWidget()
         layout = QHBoxLayout(page)
@@ -394,16 +376,14 @@ class MainWindow(QMainWindow):
         layout.addWidget(right_f, 2)
         self.stack.addWidget(page)
 
-    # ==========================
-    # PAGE 4: GALLERY (REMASTERED)
-    # ==========================
+    # --- PAGE 4: GALLERY ---
     def init_page_gallery(self):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         
-        # --- 1. HEADER ---
+        # HEADER
         header_container = QWidget()
         header_container.setStyleSheet(f"background-color: {CAT_COLORS['MANTLE']}; border-bottom: 1px solid {CAT_COLORS['SURFACE0']};")
         header_container.setFixedHeight(70)
@@ -447,11 +427,10 @@ class MainWindow(QMainWindow):
         header_layout.addWidget(btn_scan)
         layout.addWidget(header_container)
 
-        # --- 2. BODY ---
+        # BODY
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setHandleWidth(2)
         
-        # LEFT GRID
         left_widget = QWidget()
         left_layout = QVBoxLayout(left_widget)
         left_layout.setContentsMargins(0, 0, 0, 0)
@@ -470,7 +449,6 @@ class MainWindow(QMainWindow):
         self.gal_scroll.setWidget(self.db_grid)
         left_layout.addWidget(self.gal_scroll)
         
-        # Pagination
         pag_container = QWidget()
         pag_container.setFixedHeight(50)
         pag_container.setStyleSheet(f"background-color: {CAT_COLORS['MANTLE']}; border-top: 1px solid {CAT_COLORS['SURFACE0']};")
@@ -478,7 +456,6 @@ class MainWindow(QMainWindow):
         self.pag_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         left_layout.addWidget(pag_container)
         
-        # RIGHT DETAILS
         right_widget = QWidget()
         right_widget.setStyleSheet(f"background-color: {CAT_COLORS['MANTLE']}; border-left: 1px solid {CAT_COLORS['SURFACE0']};")
         right_layout = QVBoxLayout(right_widget)
@@ -507,8 +484,15 @@ class MainWindow(QMainWindow):
         btn_use_img.setIcon(qta.icon('fa5s.image', color=CAT_COLORS['TEXT']))
         btn_use_img.clicked.connect(self.use_gallery_image_i2i)
         
+        # NEU: Delete Button im rechten Panel
+        btn_del_img = QPushButton(" Delete Image")
+        btn_del_img.setIcon(qta.icon('fa5s.trash', color=CAT_COLORS['BASE']))
+        btn_del_img.setStyleSheet(f"background-color: {CAT_COLORS['RED']}; color: {CAT_COLORS['BASE']}; margin-top: 10px;")
+        btn_del_img.clicked.connect(self.delete_gallery_image)
+        
         right_layout.addWidget(btn_use_params)
         right_layout.addWidget(btn_use_img)
+        right_layout.addWidget(btn_del_img)
         right_layout.addStretch()
 
         splitter.addWidget(left_widget)
@@ -562,7 +546,6 @@ class MainWindow(QMainWindow):
         visible_items = self.gallery_results[start_idx:end_idx]
         
         for i, row in enumerate(visible_items):
-            # FIX: Hier 3 Argumente übergeben
             loader = ThumbnailLoader(row['path'], row['prompt'][:300], dict(row))
             loader.signals.loaded.connect(self.add_thumbnail_to_grid)
             self.threadpool.start(loader)
@@ -631,11 +614,8 @@ class MainWindow(QMainWindow):
         self.selected_gallery_item = row
         w = self.gal_detail_img.width()
         if not pixmap.isNull():
-            # Preview in Sidebar
             self.gal_detail_img.setPixmap(pixmap.scaled(w, w, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         
-        # NEU: Klick öffnet den ImageViewerDialog statt os.startfile
-        # Wir trennen vorherige Verbindungen, um Mehrfach-Aufrufe zu verhindern
         try: self.gal_detail_img.clicked.disconnect()
         except: pass
         
@@ -651,10 +631,44 @@ class MainWindow(QMainWindow):
         )
         self.gal_detail_txt.setHtml(meta)
 
-    # Hilfsmethode für den Viewer
     def open_fullscreen_viewer(self, path):
         viewer = ImageViewerDialog(path, self)
+        # NEU: Signal für Löschung verbinden
+        viewer.delete_confirmed.connect(self.handle_viewer_delete)
         viewer.exec()
+
+    # NEU: Handler für Löschung aus Viewer
+    def handle_viewer_delete(self, path):
+        # Viewer hat schon bestätigt, also direkt löschen
+        try:
+            os.remove(path)
+            delete_image_record(path)
+            self.refresh_gallery_view()
+            self.gal_detail_img.clear()
+            self.gal_detail_img.setText("Deleted")
+            self.gal_detail_txt.clear()
+            self.selected_gallery_item = None
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Could not delete: {e}")
+
+    # NEU: Handler für Löschung aus Galerie-Panel
+    def delete_gallery_image(self):
+        if not self.selected_gallery_item: return
+        path = self.selected_gallery_item['path']
+        
+        res = QMessageBox.question(self, "Delete Image", "Permanently delete this image?", 
+                                   QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if res == QMessageBox.StandardButton.Yes:
+            try:
+                os.remove(path)
+                delete_image_record(path)
+                self.refresh_gallery_view()
+                self.gal_detail_img.clear()
+                self.gal_detail_img.setText("Deleted")
+                self.gal_detail_txt.clear()
+                self.selected_gallery_item = None
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Could not delete: {e}")
 
     def use_gallery_params(self):
         if not self.selected_gallery_item: return

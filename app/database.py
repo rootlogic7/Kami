@@ -8,7 +8,6 @@ DB_FILE = "library.db"
 
 def init_db():
     """Initializes the SQLite database table."""
-    # Context Manager (with ...) sorgt für autom. Commit und Schließen bei Fehlern
     conn = sqlite3.connect(DB_FILE)
     try:
         with conn:
@@ -47,6 +46,23 @@ def add_image_record(path, prompt, neg, model, steps, cfg, seed):
     except Exception as e:
         print(f"[DB Error] Could not add record: {e}")
 
+def delete_image_record(path):
+    """Deletes an image record from the database."""
+    try:
+        # Pfad normalisieren, um sicherzugehen, dass er mit dem DB-Eintrag übereinstimmt
+        abs_path = os.path.abspath(path)
+        conn = sqlite3.connect(DB_FILE)
+        try:
+            with conn:
+                c = conn.cursor()
+                c.execute("DELETE FROM images WHERE path = ?", (abs_path,))
+            return True
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[DB Error] Could not delete record: {e}")
+        return False
+
 def get_filtered_images(search_text="", sort_by="Newest", model_filter="All"):
     """Queries the database with filters."""
     conn = sqlite3.connect(DB_FILE)
@@ -57,14 +73,13 @@ def get_filtered_images(search_text="", sort_by="Newest", model_filter="All"):
         query = "SELECT * FROM images WHERE 1=1"
         params = []
         
-        # 1. Search Filter (Mehrere Spalten)
+        # 1. Search Filter (Prompt, Seed, Model)
         if search_text:
-            # Wir suchen jetzt in Prompt, Seed UND Modell-Name
             query += " AND (prompt LIKE ? OR seed LIKE ? OR model LIKE ?)"
             term = f"%{search_text}%"
             params.extend([term, term, term])
             
-        # 2. Model Filter (Dropdown)
+        # 2. Model Filter
         if model_filter and model_filter != "All Models" and model_filter != "All":
             query += " AND model LIKE ?"
             params.append(f"%{model_filter}%")
@@ -97,37 +112,29 @@ def get_all_models():
 def scan_and_import_folder(base_dir="output_images"):
     """
     Scans the output folder for PNGs not yet in the DB and imports them.
-    Reads metadata from PNG info.
     """
-    # Sicherstellen, dass DB existiert
     init_db()
     
     conn = sqlite3.connect(DB_FILE)
     try:
-        # Zuerst alle existierenden Pfade holen (Lesen)
         c = conn.cursor()
         c.execute("SELECT path FROM images")
         existing_paths = set(r[0] for r in c.fetchall())
         
-        # Dateisuche
         search_path = os.path.join(base_dir, "**", "*.png")
         found_files = glob.glob(search_path, recursive=True)
         
         new_count = 0
         
-        # Transaktion starten
         with conn:
             for file_path in found_files:
                 abs_path = os.path.abspath(file_path)
                 if abs_path not in existing_paths:
                     try:
-                        # Extract Metadata
-                        # Hinweis: Image.open öffnet die Datei nur kurz, 'with' schließt sie sofort wieder
                         with Image.open(abs_path) as img:
                             img.load()
                             params = img.info.get("parameters", "")
                             
-                        # Parsing Logic
                         prompt = "Unknown"
                         neg = ""
                         steps = 0
