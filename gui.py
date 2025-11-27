@@ -17,16 +17,13 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from app.engine import T2IEngine
 from app.config import SessionConfig, STYLES
 from app.utils import get_file_list
-# Import Database stuff
+# Import Styles
+from app.style import get_stylesheet, CAT_COLORS
+# Import Database
 from app.database import get_filtered_images, get_all_models, scan_and_import_folder
 
 CHECKPOINTS_DIR = "models/checkpoints"
 LORAS_DIR = "models/loras"
-
-# --- Catppuccin Colors ---
-CAT_BASE = "#1e1e2e"; CAT_MANTLE = "#181825"; CAT_SURFACE0 = "#313244"
-CAT_SURFACE1 = "#45475a"; CAT_TEXT = "#cdd6f4"; CAT_SUBTEXT0 = "#a6adc8"
-CAT_GREEN = "#a6e3a1"; CAT_RED = "#f38ba8"; CAT_OVERLAY0 = "#6c7086"
 
 # --- Workers ---
 class GeneratorWorker(QObject):
@@ -61,47 +58,34 @@ class DBScannerWorker(QObject):
         count = scan_and_import_folder()
         self.finished.emit(count)
 
-# --- NEU: Asynchroner Thumbnail Loader ---
 class ThumbnailLoaderSignals(QObject):
-    loaded = pyqtSignal(str, QPixmap, str) # path, pixmap, tooltip
+    loaded = pyqtSignal(str, QPixmap, str)
 
 class ThumbnailLoader(QRunnable):
     def __init__(self, path, prompt, size=200):
         super().__init__()
-        self.path = path
-        self.prompt = prompt
-        self.size = size
-        self.signals = ThumbnailLoaderSignals()
+        self.path = path; self.prompt = prompt; self.size = size; self.signals = ThumbnailLoaderSignals()
 
     def run(self):
         if not os.path.exists(self.path): return
-        
-        # High Performance Loading:
-        # Liest nur die nötigen Pixel für die Vorschaugröße, statt das volle Bild
         reader = QImageReader(self.path)
-        
-        # Optimierung: Größe vor dem Laden setzen
-        orig_size = reader.size()
-        if orig_size.isValid():
-            reader.setScaledSize(orig_size.scaled(self.size, self.size, Qt.AspectRatioMode.KeepAspectRatio))
-            
+        orig = reader.size()
+        if orig.isValid(): reader.setScaledSize(orig.scaled(self.size, self.size, Qt.AspectRatioMode.KeepAspectRatio))
         img = reader.read()
-        if not img.isNull():
-            pix = QPixmap.fromImage(img)
-            self.signals.loaded.emit(self.path, pix, self.prompt)
+        if not img.isNull(): self.signals.loaded.emit(self.path, QPixmap.fromImage(img), self.prompt)
 
 # --- Main Window ---
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Kami")
+        self.setWindowTitle("Kami - SDXL Station")
         self.resize(1600, 950)
         
         self.engine = T2IEngine()
         self.config = SessionConfig()
         self.history = []
         self.input_img_pil = None
-        self.threadpool = QThreadPool() # Pool für paralleles Laden
+        self.threadpool = QThreadPool()
         
         os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
         os.makedirs(LORAS_DIR, exist_ok=True)
@@ -109,31 +93,11 @@ class MainWindow(QMainWindow):
         self.init_ui()
         self.apply_theme()
         self.load_settings_from_config()
-        
-        # Start DB Scan on load
         self.start_db_scan()
 
     def apply_theme(self):
-        self.setStyleSheet(f"""
-            QMainWindow, QWidget {{ background-color: {CAT_BASE}; color: {CAT_TEXT}; font-family: 'Segoe UI', sans-serif; font-size: 14px; }}
-            QGroupBox {{ border: 1px solid {CAT_SURFACE1}; margin-top: 1.5em; border-radius: 5px; }}
-            QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 3px; color: {CAT_GREEN}; font-weight: bold; }}
-            QLineEdit, QTextEdit, QListWidget, QComboBox, QSpinBox, QDoubleSpinBox {{ 
-                background-color: {CAT_SURFACE0}; border: 1px solid {CAT_SURFACE1}; border-radius: 4px; padding: 5px; color: {CAT_TEXT};
-                selection-background-color: {CAT_GREEN}; selection-color: {CAT_BASE};
-            }}
-            QPushButton {{ background-color: {CAT_SURFACE1}; color: {CAT_TEXT}; border: none; padding: 8px 16px; border-radius: 4px; font-weight: bold; }}
-            QPushButton:hover {{ background-color: {CAT_OVERLAY0}; }}
-            QPushButton#GenerateBtn {{ background-color: {CAT_GREEN}; color: {CAT_BASE}; }}
-            QPushButton#GenerateBtn:hover {{ background-color: #94e2d5; }}
-            QPushButton#ModeBtn:checked {{ background-color: {CAT_GREEN}; color: {CAT_BASE}; }}
-            QSlider::groove:horizontal {{ border: 1px solid {CAT_SURFACE1}; height: 6px; background: {CAT_MANTLE}; border-radius: 3px; }}
-            QSlider::handle:horizontal {{ background: {CAT_GREEN}; border: 1px solid {CAT_BASE}; width: 16px; margin: -5px 0; border-radius: 8px; }}
-            QTabWidget::pane {{ border: 1px solid {CAT_SURFACE1}; border-radius: 4px; }}
-            QTabBar::tab {{ background: {CAT_SURFACE0}; border: 1px solid {CAT_SURFACE1}; padding: 8px 12px; margin-right: 2px; border-top-left-radius: 4px; color: {CAT_SUBTEXT0}; }}
-            QTabBar::tab:selected {{ background: {CAT_GREEN}; color: {CAT_BASE}; font-weight: bold; }}
-            QLabel#PreviewLabel {{ background-color: {CAT_MANTLE}; border: 2px dashed {CAT_SURFACE1}; border-radius: 8px; }}
-        """)
+        # Load external stylesheet
+        self.setStyleSheet(get_stylesheet())
 
     def init_ui(self):
         main_widget = QWidget()
@@ -152,13 +116,14 @@ class MainWindow(QMainWindow):
         # Tabs
         self.tab_gen = QWidget(); self.tab_models = QWidget(); self.tab_favs = QWidget(); self.tab_gallery = QWidget()
         self.side_tabs.addTab(self.tab_gen, "Generate")
-        self.side_tabs.addTab(self.tab_models, "Models & Styles")
+        self.side_tabs.addTab(self.tab_models, "Models")
         self.side_tabs.addTab(self.tab_favs, "Favorites")
         self.side_tabs.addTab(self.tab_gallery, "Gallery")
         sidebar_layout.addWidget(self.side_tabs)
 
         # --- TAB 1: GENERATE ---
         gen_layout = QVBoxLayout(self.tab_gen)
+        
         mode_group = QGroupBox("Mode")
         mode_layout = QHBoxLayout(mode_group)
         self.btn_mode_t2i = QPushButton("Text to Image"); self.btn_mode_t2i.setObjectName("ModeBtn"); self.btn_mode_t2i.setCheckable(True); self.btn_mode_t2i.setChecked(True)
@@ -172,10 +137,11 @@ class MainWindow(QMainWindow):
         i2i_layout = QVBoxLayout(self.i2i_group)
         self.lbl_input_preview = QLabel("Drop/Load Image")
         self.lbl_input_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_input_preview.setStyleSheet(f"border: 2px dashed {CAT_SURFACE1}; min-height: 120px;")
+        self.lbl_input_preview.setStyleSheet(f"border: 2px dashed {CAT_COLORS['SURFACE1']}; min-height: 120px;")
         i2i_layout.addWidget(self.lbl_input_preview)
-        btn_load = QPushButton("Load"); btn_load.clicked.connect(self.load_input_image_dialog)
+        btn_load = QPushButton("Load Image"); btn_load.clicked.connect(self.load_input_image_dialog)
         i2i_layout.addWidget(btn_load)
+        
         i2i_layout.addWidget(QLabel("Denoising Strength"))
         s_layout = QHBoxLayout()
         self.slider_strength = QSlider(Qt.Orientation.Horizontal); self.slider_strength.setRange(0, 100)
@@ -185,6 +151,7 @@ class MainWindow(QMainWindow):
         i2i_layout.addLayout(s_layout)
         gen_layout.addWidget(self.i2i_group); self.i2i_group.setVisible(False)
 
+        # Prompts
         gen_layout.addWidget(QLabel("Positive Prompt"))
         self.txt_prompt = QTextEdit(); self.txt_prompt.setMaximumHeight(100)
         gen_layout.addWidget(self.txt_prompt)
@@ -192,8 +159,10 @@ class MainWindow(QMainWindow):
         self.txt_neg = QTextEdit(); self.txt_neg.setMaximumHeight(60)
         gen_layout.addWidget(self.txt_neg)
 
+        # Params
         p_group = QGroupBox("Parameters")
         p_layout = QGridLayout(p_group)
+        
         p_layout.addWidget(QLabel("Steps:"), 0, 0)
         self.slider_steps = QSlider(Qt.Orientation.Horizontal); self.slider_steps.setRange(1, 100)
         self.spin_steps = QSpinBox(); self.spin_steps.setRange(1, 100); self.spin_steps.setValue(30)
@@ -221,19 +190,20 @@ class MainWindow(QMainWindow):
         m_layout.addWidget(QLabel("LoRA")); self.combo_lora = QComboBox(); self.combo_lora.addItem("None")
         for f in get_file_list(LORAS_DIR): self.combo_lora.addItem(os.path.join(LORAS_DIR, f))
         m_layout.addWidget(self.combo_lora)
+        
         l_scale_l = QHBoxLayout()
         self.slider_lora = QSlider(Qt.Orientation.Horizontal); self.slider_lora.setRange(0, 200)
         self.spin_lora = QDoubleSpinBox(); self.spin_lora.setRange(0.0, 2.0); self.spin_lora.setSingleStep(0.1); self.spin_lora.setValue(1.0)
         self.sync_slider_spinbox(self.slider_lora, self.spin_lora, 100.0)
         l_scale_l.addWidget(self.slider_lora); l_scale_l.addWidget(self.spin_lora)
-        m_layout.addLayout(l_scale_l)
+        m_layout.addWidget(QLabel("LoRA Scale")); m_layout.addLayout(l_scale_l)
         
         self.combo_style = QComboBox()
         for k in STYLES.keys(): self.combo_style.addItem(k)
         self.combo_style.currentTextChanged.connect(lambda t: setattr(self.config, 'current_style', t))
-        m_layout.addWidget(QLabel("Style")); m_layout.addWidget(self.combo_style)
-        self.chk_pony = QCheckBox("Pony Mode"); m_layout.addWidget(self.chk_pony)
-        self.chk_freeu = QCheckBox("FreeU"); m_layout.addWidget(self.chk_freeu)
+        m_layout.addWidget(QLabel("Style Preset")); m_layout.addWidget(self.combo_style)
+        self.chk_pony = QCheckBox("Pony Mode (Score Tags)"); m_layout.addWidget(self.chk_pony)
+        self.chk_freeu = QCheckBox("FreeU (Quality Boost)"); m_layout.addWidget(self.chk_freeu)
         m_layout.addStretch()
 
         # --- TAB 3: FAVORITES ---
@@ -241,8 +211,8 @@ class MainWindow(QMainWindow):
         self.list_favs = QListWidget(); self.list_favs.itemDoubleClicked.connect(self.load_favorite)
         f_layout.addWidget(self.list_favs)
         bf_layout = QHBoxLayout()
-        btn_sf = QPushButton("Save"); btn_sf.clicked.connect(self.save_favorite)
-        btn_df = QPushButton("Delete"); btn_df.clicked.connect(self.delete_favorite)
+        btn_sf = QPushButton("Save Current"); btn_sf.clicked.connect(self.save_favorite)
+        btn_df = QPushButton("Delete"); btn_df.setObjectName("DeleteBtn"); btn_df.clicked.connect(self.delete_favorite)
         bf_layout.addWidget(btn_sf); bf_layout.addWidget(btn_df)
         f_layout.addLayout(bf_layout)
         self.refresh_favorites_list()
@@ -250,7 +220,7 @@ class MainWindow(QMainWindow):
         # --- TAB 4: GALLERY FILTER ---
         gal_layout = QVBoxLayout(self.tab_gallery)
         gal_layout.addWidget(QLabel("Search Prompts"))
-        self.txt_search = QLineEdit(); self.txt_search.textChanged.connect(self.refresh_gallery_view)
+        self.txt_search = QLineEdit(); self.txt_search.setPlaceholderText("type to search..."); self.txt_search.textChanged.connect(self.refresh_gallery_view)
         gal_layout.addWidget(self.txt_search)
         
         gal_layout.addWidget(QLabel("Filter by Model"))
@@ -277,7 +247,7 @@ class MainWindow(QMainWindow):
         # ==================== RIGHT AREA (STACKED) ====================
         self.right_stack = QStackedWidget()
         
-        # --- Page 0: Generator View ---
+        # Generator View
         gen_view = QWidget(); gv_layout = QVBoxLayout(gen_view)
         self.lbl_main_preview = QLabel("Ready to dream..."); self.lbl_main_preview.setObjectName("PreviewLabel"); self.lbl_main_preview.setAlignment(Qt.AlignmentFlag.AlignCenter); self.lbl_main_preview.setMinimumHeight(500)
         gv_layout.addWidget(self.lbl_main_preview)
@@ -287,7 +257,7 @@ class MainWindow(QMainWindow):
         scroll.setWidget(self.history_grid); gv_layout.addWidget(scroll)
         self.right_stack.addWidget(gen_view)
         
-        # --- Page 1: Gallery View ---
+        # Gallery View
         gal_view = QWidget(); gal_v_layout = QVBoxLayout(gal_view)
         gal_scroll = QScrollArea(); gal_scroll.setWidgetResizable(True)
         self.db_grid = QWidget(); self.db_layout = QGridLayout(self.db_grid); self.db_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
@@ -325,42 +295,30 @@ class MainWindow(QMainWindow):
         self.scan_thread.start()
 
     def refresh_gallery_view(self):
-        # Update Combo Filters
         current_models = [self.combo_filter_model.itemText(i) for i in range(self.combo_filter_model.count())]
         db_models = get_all_models()
         for m in db_models:
             if m not in current_models: self.combo_filter_model.addItem(m)
             
-        # 1. Clear Grid (wichtig: sofort, damit UI responsive wirkt)
         for i in reversed(range(self.db_layout.count())): 
             w = self.db_layout.itemAt(i).widget(); 
             if w: w.setParent(None)
             
-        # 2. Get Data from DB
         rows = get_filtered_images(
             search_text=self.txt_search.text(),
             sort_by=self.combo_sort.currentText(),
             model_filter=self.combo_filter_model.currentText()
         )
         
-        # 3. Start Async Loading for each image
-        self.current_gal_rows = rows[:50] # Pagination limit
-        self.current_col_count = 0
-        
-        for i, row in enumerate(self.current_gal_rows):
+        for i, row in enumerate(rows[:50]):
             path = row['path']
-            prompt_snip = row['prompt'][:100]
+            tooltip = row['prompt'][:300]
             
-            # Start Worker in Pool
-            loader = ThumbnailLoader(path, prompt_snip)
+            loader = ThumbnailLoader(path, tooltip)
             loader.signals.loaded.connect(self.add_thumbnail_to_grid)
             self.threadpool.start(loader)
 
     def add_thumbnail_to_grid(self, path, pixmap, tooltip):
-        # Find next empty slot logic simplistic: simple append wont work async perfectly ordered 
-        # but for gallery it is acceptable. 
-        # Better: use a layout that flows.
-        
         count = self.db_layout.count()
         cols = 5
         row = count // cols
@@ -369,8 +327,9 @@ class MainWindow(QMainWindow):
         lbl = ClickableLabel(path)
         lbl.setPixmap(pixmap)
         lbl.setFixedSize(200, 200)
-        lbl.setStyleSheet(f"border: 1px solid {CAT_SURFACE1}; border-radius: 4px; background-color: {CAT_MANTLE};")
-        lbl.setToolTip(f"{tooltip}...")
+        # Use imported constants directly here
+        lbl.setStyleSheet(f"border: 1px solid {CAT_COLORS['SURFACE1']}; border-radius: 6px; background-color: {CAT_COLORS['MANTLE']};")
+        lbl.setToolTip(tooltip)
         lbl.double_clicked.connect(lambda p=path: self.set_input_image(p))
         lbl.clicked.connect(lambda p=path: self.preview_image_gallery(p))
         
@@ -395,7 +354,7 @@ class MainWindow(QMainWindow):
             pixmap = QPixmap(path)
             self.lbl_input_preview.setPixmap(pixmap.scaled(self.lbl_input_preview.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
             self.toggle_mode("I2I")
-            self.side_tabs.setCurrentIndex(0) # Go to Generate
+            self.side_tabs.setCurrentIndex(0) 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load image: {e}")
 
@@ -489,7 +448,6 @@ class MainWindow(QMainWindow):
         self.add_to_history(path)
         self.config.prompt = self.txt_prompt.toPlainText()
         self.config.save_session_state()
-        # Trigger scan to add new image to DB immediately
         self.start_db_scan()
 
     def on_generation_error(self, err):
@@ -502,7 +460,7 @@ class MainWindow(QMainWindow):
         pix = QPixmap(path)
         lbl.setPixmap(pix.scaled(150, 150, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
         lbl.setFixedSize(150, 150)
-        lbl.setStyleSheet(f"border: 1px solid {CAT_SURFACE1}; border-radius: 4px;")
+        lbl.setStyleSheet(f"border: 1px solid {CAT_COLORS['SURFACE1']}; border-radius: 4px;")
         lbl.double_clicked.connect(lambda: self.set_input_image(path))
         self.history_layout.addWidget(lbl, row, col)
         self.history.append(path)
@@ -515,13 +473,9 @@ class ClickableLabel(QLabel):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     
-    # WICHTIG: Setzt die App-ID für Wayland/Hyprland
-    # Das muss exakt mit dem Namen der .desktop-Datei übereinstimmen (ohne .desktop)
+    # Set App ID for Wayland/Hyprland (matches .desktop file)
     app.setDesktopFileName("kami") 
-    app.setApplicationName("kami")
-    
-    # Optional: Ein Fenster-Icon setzen (falls du eine icon.png hast)
-    # app.setWindowIcon(QIcon("icon.png"))
+    app.setApplicationName("Kami")
 
     window = MainWindow()
     window.show()
