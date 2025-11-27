@@ -40,6 +40,11 @@ temp/
 # Logs
 *.log
 
-# LoRA's
-loras/
+# Models: Checkpoints, LoRA
+models/
+models/checkpoints/
+models/loras/
 .safetensors
+
+# Prompts
+favorites.json

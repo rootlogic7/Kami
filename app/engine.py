@@ -7,7 +7,7 @@ from datetime import datetime
 
 class T2IEngine:
     """
-    Die Kern-Klasse für die Bildgenerierung (SDXL Base + Refiner + LoRA).
+    Die Kern-Klasse für die Bildgenerierung.
     """
     
     def __init__(self, 
@@ -34,7 +34,6 @@ class T2IEngine:
         )
         return self.vae
 
-    # KORREKTUR: lora_scale wird hier entfernt, da es nur in generate verwendet wird.
     def load_base_model(self, lora_path=None):
         """Lädt die Base Pipeline und wendet optional LoRA-Gewichte an."""
         
@@ -53,13 +52,26 @@ class T2IEngine:
         print(f"Lade Base Modell: {self.base_model_id}...")
         vae = self._load_vae()
 
-        self.base_pipeline = StableDiffusionXLPipeline.from_pretrained(
-            self.base_model_id,
-            vae=vae,
-            torch_dtype=torch.float16,
-            use_safetensors=True,
-            variant="fp16"
-        )
+        # UNTERSCHEIDUNG: Datei oder Repo?
+        if self.base_model_id.endswith(".safetensors") or self.base_model_id.endswith(".ckpt"):
+            # LOKALE DATEI LADEN (Pony, Illustrious etc.)
+            print("Erkenne lokale Checkpoint-Datei. Nutze 'from_single_file'...")
+            self.base_pipeline = StableDiffusionXLPipeline.from_single_file(
+                self.base_model_id,
+                vae=vae,
+                torch_dtype=torch.float16,
+                use_safetensors=True,
+                # variant="fp16" entfernen wir hier, da Checkpoints das oft nicht im Header haben
+            )
+        else:
+            # HUGGING FACE REPO LADEN (Standard SDXL)
+            self.base_pipeline = StableDiffusionXLPipeline.from_pretrained(
+                self.base_model_id,
+                vae=vae,
+                torch_dtype=torch.float16,
+                use_safetensors=True,
+                variant="fp16"
+            )
         
         self.base_pipeline.has_lora = False # Standardmäßig keine LoRA geladen
 
@@ -220,3 +232,31 @@ class T2IEngine:
         torch.cuda.empty_cache()
         
         return output_path
+
+    def cleanup(self):
+        """
+        Gibt die Pipelines explizit frei und leert den CUDA-Speicher. 
+        Dies ist wichtig beim Wechsel des Basismodells.
+        """
+        print("Lösche alte Pipelines und leere VRAM...")
+        
+        # Pipelines löschen
+        if self.base_pipeline is not None:
+            del self.base_pipeline
+            self.base_pipeline = None
+        
+        if self.refiner_pipeline is not None:
+            del self.refiner_pipeline
+            self.refiner_pipeline = None
+            
+        if self.vae is not None:
+             # VAE kann theoretisch bleiben, aber für maximale Sicherheit löschen wir ihn auch
+             del self.vae
+             self.vae = None
+        
+        # Garbage Collection und CUDA Cache leeren
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        print("VRAM-Bereinigung abgeschlossen.")
