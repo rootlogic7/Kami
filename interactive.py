@@ -10,11 +10,17 @@ from rich.prompt import Prompt, FloatPrompt, IntPrompt, Confirm
 
 from app.engine import T2IEngine
 from app.config import SessionConfig
-from app.utils import print_image_preview, get_file_list, get_clean_path
+# Updated imports to include new metadata functions
+from app.utils import (
+    print_image_preview, 
+    get_file_list, 
+    get_clean_path, 
+    get_all_generated_images, 
+    get_image_metadata, 
+    find_images_by_prompt_content
+)
 
 # --- Logging Configuration ---
-# This sets up logging to write to 'app.log' instead of the console.
-# This keeps the TUI clean while preserving debug information.
 logging.basicConfig(
     filename='app.log',
     filemode='a',
@@ -64,6 +70,64 @@ def select_file_from_list(file_type, current_path, directory, hf_allowed=False):
     
     return current_path
 
+def display_image_with_metadata(image_path: str):
+    """
+    Helper function to clear screen, show image, and print metadata.
+    """
+    clear_screen()
+    console.print(Panel(f"[bold cyan]Image Viewer:[/bold cyan] {os.path.basename(image_path)}", box=box.DOUBLE))
+    
+    # 1. Render Image (Ghostty/Kitty)
+    print_image_preview(image_path)
+    
+    # 2. Retrieve and show Metadata
+    meta = get_image_metadata(image_path)
+    params = meta.get("parameters", "No parameters found.")
+    
+    console.print(Panel(params, title="Metadata / Parameters", border_style="green", box=box.ROUNDED))
+
+def handle_gallery_menu(pre_filtered_images=None, title="Gallery"):
+    """
+    Interactive gallery to browse generated images.
+    
+    Args:
+        pre_filtered_images (list): Optional list of paths to show. If None, shows all.
+        title (str): Title for the gallery header.
+    """
+    if pre_filtered_images is not None:
+        images = pre_filtered_images
+    else:
+        images = get_all_generated_images()
+
+    if not images:
+        console.print("[yellow]No images found in output directory.[/yellow]")
+        Prompt.ask("Press Enter...")
+        return
+
+    current_idx = 0
+    while True:
+        img_path = images[current_idx]
+        display_image_with_metadata(img_path)
+        
+        console.print(f"\n[bold white]Image {current_idx + 1} of {len(images)}[/bold white]")
+        console.print("[green][N][/green]ext | [green][P][/green]rev | [red][Q][/red]uit Gallery")
+        
+        choice = Prompt.ask("Action", choices=["n", "p", "q"], default="n")
+        
+        if choice == "q":
+            break
+        elif choice == "n":
+            if current_idx < len(images) - 1:
+                current_idx += 1
+            else:
+                console.print("[yellow]End of gallery. Looping to start.[/yellow]")
+                current_idx = 0
+        elif choice == "p":
+            if current_idx > 0:
+                current_idx -= 1
+            else:
+                current_idx = len(images) - 1
+
 def print_header(config):
     clear_screen()
     console.print(Panel("[bold magenta]🚀 PYTHON SDXL GENERATOR[/bold magenta] - [dim]Interactive Session[/dim]", box=box.DOUBLE))
@@ -86,7 +150,7 @@ def print_header(config):
     
     console.print(table)
     if config.prompt: console.print(f"[dim]Current Prompt: {config.prompt[:90]}...[/dim]", style="italic grey50")
-    console.print(Panel("[bold white][ENTER][/bold white] Generate | [bold white][F][/bold white] Favorites | [bold white][Q][/bold white] Quit", box=box.MINIMAL, style="grey50"))
+    console.print(Panel("[bold white][ENTER][/bold white] Generate | [bold white][G][/bold white] Gallery | [bold white][F][/bold white] Favorites | [bold white][Q][/bold white] Quit", box=box.MINIMAL, style="grey50"))
 
 def handle_favorites_menu(config):
     """Sub-menu for favorites management."""
@@ -110,29 +174,37 @@ def handle_favorites_menu(config):
             console.print(table)
 
         console.print("\n[bold white]Actions:[/bold white]")
-        console.print("[green][Number][/green] Load | [cyan][D][/cyan]etails | [yellow][E][/yellow]dit | [red][L][/red]elete | [white][ENTER][/white] Back")
+        console.print("[green][Number][/green] Load | [cyan][V][/cyan]iew Images | [yellow][E][/yellow]dit | [red][D][/red]elete | [white][ENTER][/white] Back")
         
         choice = Prompt.ask("Choice").strip().lower()
         if not choice: return 
 
-        if choice == 'l':
+        if choice == 'd':
             try:
                 idx = IntPrompt.ask("Number to delete") - 1
                 if 0 <= idx < len(config.favourites):
                     deleted = config.favourites.pop(idx)
                     config.save_favorites()
                     console.print(f"[red]Deleted: {deleted['name']}[/red]")
-                    logger.info(f"Deleted favorite: {deleted['name']}")
                     if not Confirm.ask("Continue?"): return
             except: pass
 
-        elif choice == 'd':
+        elif choice == 'v':
+            # NEW: View images associated with a favorite
             try:
-                idx = IntPrompt.ask("Number for details") - 1
+                idx = IntPrompt.ask("Number to view images for") - 1
                 if 0 <= idx < len(config.favourites):
                     fav = config.favourites[idx]
-                    console.print(Panel(fav['prompt'], title=f"⭐ {fav['name']}", border_style="cyan"))
-                    Prompt.ask("Press Enter...")
+                    console.print(f"[dim]Searching images for: {fav['name']}...[/dim]")
+                    
+                    # Search images by prompt content
+                    found_images = find_images_by_prompt_content(fav['prompt'])
+                    
+                    if found_images:
+                        handle_gallery_menu(found_images, title=f"Images for: {fav['name']}")
+                    else:
+                        console.print(f"[red]No images found matching prompt for '{fav['name']}'[/red]")
+                        Prompt.ask("Press Enter...")
             except: pass
 
         elif choice == 'e':
@@ -199,9 +271,12 @@ def main():
         elif choice == '2': config.guidance = FloatPrompt.ask("Guidance", default=config.guidance)
         elif choice == '3': config.neg_prompt = Prompt.ask("Negative Prompt", default=config.neg_prompt)
 
-        # --- FAVORITES ---
+        # --- FAVORITES & GALLERY ---
         elif choice == 'f':
             handle_favorites_menu(config)
+        
+        elif choice == 'g':
+            handle_gallery_menu()
 
         # --- GENERATE ---
         elif choice == '':
@@ -231,11 +306,8 @@ def main():
                 saved_path = engine.generate(final_prompt, config.neg_prompt, config.steps, config.guidance, config.seed, config.use_refiner, config.lora_path, config.lora_scale)
                 console.print(f"[bold green]✅ Saved:[/bold green] {saved_path}")
                 
-                print_image_preview(saved_path)
-                
-                if not "kitty" in os.environ.get("TERM", "").lower():
-                    if os.name == 'nt': os.startfile(saved_path)
-                    elif sys.platform == 'darwin': os.system(f'open "{saved_path}"')
+                # Show immediate preview with metadata summary
+                display_image_with_metadata(saved_path)
 
                 if Confirm.ask("Save as favorite?", default=False):
                     exists = any(f['prompt'] == final_prompt for f in config.favourites)
