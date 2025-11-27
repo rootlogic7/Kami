@@ -1,16 +1,27 @@
 import os
 import sys
 import traceback
+import logging
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich import box
 from rich.prompt import Prompt, FloatPrompt, IntPrompt, Confirm
 
-# Import refactored modules
 from app.engine import T2IEngine
-from app.config import SessionConfig, SESSION_FILE
+from app.config import SessionConfig
 from app.utils import print_image_preview, get_file_list, get_clean_path
+
+# --- Logging Configuration ---
+# This sets up logging to write to 'app.log' instead of the console.
+# This keeps the TUI clean while preserving debug information.
+logging.basicConfig(
+    filename='app.log',
+    filemode='a',
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 console = Console()
 
@@ -111,6 +122,7 @@ def handle_favorites_menu(config):
                     deleted = config.favourites.pop(idx)
                     config.save_favorites()
                     console.print(f"[red]Deleted: {deleted['name']}[/red]")
+                    logger.info(f"Deleted favorite: {deleted['name']}")
                     if not Confirm.ask("Continue?"): return
             except: pass
 
@@ -151,6 +163,7 @@ def handle_favorites_menu(config):
             except: pass
 
 def main():
+    logger.info("Starting Interactive Session")
     config = SessionConfig()
     engine = None
     
@@ -161,6 +174,7 @@ def main():
         if choice == 'q':
             console.print("[bold magenta]Saving session and exiting...[/bold magenta]")
             config.save_session_state()
+            logger.info("Session ended by user.")
             break
 
         # --- SETTINGS ---
@@ -198,18 +212,20 @@ def main():
             if not prompt_input: continue
             
             config.prompt = prompt_input 
-            # Auto-save session on action
             config.save_session_state()
 
             if engine is None:
                 try:
                     with console.status("[bold green]Loading Model...[/bold green]"):
+                        logger.info(f"Initializing engine with model: {config.model_path}")
                         engine = T2IEngine(base_model_id=config.model_path)
                 except Exception as e:
+                    logger.error(f"Failed to load model: {e}")
                     console.print(f"[red]Error loading model: {e}[/red]"); input(); continue
 
             final_prompt = (config.pony_prefix + prompt_input) if config.pony_mode else prompt_input
             console.print(f"\n[dim]Generating...[/dim]")
+            logger.info(f"Starting generation. Prompt: {final_prompt[:50]}...")
             
             try:
                 saved_path = engine.generate(final_prompt, config.neg_prompt, config.steps, config.guidance, config.seed, config.use_refiner, config.lora_path, config.lora_scale)
@@ -217,12 +233,10 @@ def main():
                 
                 print_image_preview(saved_path)
                 
-                # Fallback open
                 if not "kitty" in os.environ.get("TERM", "").lower():
                     if os.name == 'nt': os.startfile(saved_path)
                     elif sys.platform == 'darwin': os.system(f'open "{saved_path}"')
 
-                # Save Favorite
                 if Confirm.ask("Save as favorite?", default=False):
                     exists = any(f['prompt'] == final_prompt for f in config.favourites)
                     if exists:
@@ -237,8 +251,9 @@ def main():
                 
                 input("\nPress [ENTER]...")
             except Exception as e:
+                logger.error(f"Generation failed: {e}")
+                logger.error(traceback.format_exc())
                 console.print(f"\n[red]Generation Error: {e}[/red]")
-                traceback.print_exc() 
                 input()
 
 if __name__ == "__main__":

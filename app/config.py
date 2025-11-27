@@ -1,10 +1,13 @@
 import os
 import json
+import logging
 from typing import List, Dict, Any
 
 # Constants
 FAV_FILE = "favorites.json"
 SESSION_FILE = "session_config.json"
+
+logger = logging.getLogger(__name__)
 
 class SessionConfig:
     """
@@ -41,16 +44,19 @@ class SessionConfig:
                     data = json.load(f)
                     migrated = []
                     for item in data:
+                        # Migration: Old string entry -> New object format
                         if isinstance(item, str):
                             migrated.append({
                                 "name": item[:25].strip() + "...", 
                                 "prompt": item
                             })
+                        # Already in new format
                         elif isinstance(item, dict) and "prompt" in item:
                             if "name" not in item: item["name"] = "Untitled"
                             migrated.append(item)
                     return migrated
             except json.JSONDecodeError:
+                logger.error(f"Failed to decode {FAV_FILE}. Starting with empty favorites.")
                 return []
         return []
 
@@ -60,7 +66,7 @@ class SessionConfig:
             with open(FAV_FILE, 'w', encoding='utf-8') as f:
                 json.dump(self.favourites, f, indent=4, ensure_ascii=False)
         except IOError as e:
-            print(f"Error saving favorites: {e}")
+            logger.error(f"Error saving favorites: {e}")
 
     def _load_session_state(self):
         """Restores the last session configuration."""
@@ -78,7 +84,7 @@ class SessionConfig:
                     self.use_refiner = data.get("use_refiner", self.use_refiner)
                     self.pony_mode = data.get("pony_mode", self.pony_mode)
             except Exception as e:
-                print(f"Could not load session config: {e}")
+                logger.warning(f"Could not load session config: {e}")
 
     def save_session_state(self):
         """Persists the current configuration to a JSON file."""
@@ -96,4 +102,4 @@ class SessionConfig:
             with open(SESSION_FILE, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=4)
         except IOError as e:
-            print(f"Error saving session state: {e}")
+            logger.error(f"Error saving session state: {e}")

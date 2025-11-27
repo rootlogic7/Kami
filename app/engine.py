@@ -1,15 +1,20 @@
 import torch
 from diffusers import StableDiffusionXLPipeline, StableDiffusionXLImg2ImgPipeline, AutoencoderKL
 from PIL import Image
-from PIL.PngImagePlugin import PngInfo  # Required for metadata
+from PIL.PngImagePlugin import PngInfo
 import os
 import gc
 import re
+import logging
 from datetime import datetime
+
+# Initialize logger for this module
+logger = logging.getLogger(__name__)
 
 class T2IEngine:
     """
     Core class for Text-to-Image generation using Stable Diffusion XL.
+    Handles model loading, memory management, and image generation.
     """
     
     def __init__(self, 
@@ -29,32 +34,36 @@ class T2IEngine:
         if self.vae is not None:
             return self.vae
             
-        print("Loading VAE (fp16 fix)...")
-        self.vae = AutoencoderKL.from_pretrained(
-            "madebyollin/sdxl-vae-fp16-fix", 
-            torch_dtype=torch.float16
-        )
-        return self.vae
+        logger.info("Loading VAE (fp16 fix)...")
+        try:
+            self.vae = AutoencoderKL.from_pretrained(
+                "madebyollin/sdxl-vae-fp16-fix", 
+                torch_dtype=torch.float16
+            )
+            return self.vae
+        except Exception as e:
+            logger.error(f"Failed to load VAE: {e}")
+            raise
 
     def load_base_model(self, lora_path=None):
         """Loads the Base Pipeline and optionally applies LoRA weights."""
         
-        # Check if reload is necessary due to LoRA change
+        # Check if reload is necessary due to LoRA state change
         if self.base_pipeline is not None:
             lora_needs_reload = (lora_path and not self.base_pipeline.has_lora) or \
                                 (not lora_path and self.base_pipeline.has_lora)
             if lora_needs_reload:
-                print("Model state change detected (LoRA). Reloading Base Pipeline...")
+                logger.info("Model state change detected (LoRA). Reloading Base Pipeline...")
                 self.base_pipeline = None 
                 self.load_base_model(lora_path=lora_path)
             return
 
-        print(f"Loading Base Model: {self.base_model_id}...")
+        logger.info(f"Loading Base Model: {self.base_model_id}...")
         vae = self._load_vae()
 
-        # Distinguish between local file and Hugging Face Repo
+        # Distinguish between local file (safetensors/ckpt) and Hugging Face Repo
         if self.base_model_id.endswith(".safetensors") or self.base_model_id.endswith(".ckpt"):
-            print("Detected local checkpoint file. Using 'from_single_file'...")
+            logger.info("Detected local checkpoint file. Using 'from_single_file'...")
             self.base_pipeline = StableDiffusionXLPipeline.from_single_file(
                 self.base_model_id,
                 vae=vae,
@@ -73,21 +82,21 @@ class T2IEngine:
         self.base_pipeline.has_lora = False
 
         if lora_path and os.path.exists(lora_path):
-            print(f"Loading LoRA from: {lora_path}")
+            logger.info(f"Loading LoRA from: {lora_path}")
             self.base_pipeline.load_lora_weights(lora_path)
             self.base_pipeline.has_lora = True
         elif lora_path:
-             print(f"WARNING: LoRA file not found at {lora_path}")
+             logger.warning(f"LoRA file not found at {lora_path}")
 
         self.base_pipeline.enable_model_cpu_offload()
-        print("Base Model loaded.")
+        logger.info("Base Model loaded successfully.")
 
     def load_refiner_model(self):
         """Loads the Refiner Pipeline if not already active."""
         if self.refiner_pipeline is not None:
             return
 
-        print(f"Loading Refiner Model: {self.refiner_model_id}...")
+        logger.info(f"Loading Refiner Model: {self.refiner_model_id}...")
         vae = self._load_vae()
         
         self.refiner_pipeline = StableDiffusionXLImg2ImgPipeline.from_pretrained(
@@ -98,10 +107,10 @@ class T2IEngine:
             variant="fp16"
         )
         self.refiner_pipeline.enable_model_cpu_offload()
-        print("Refiner Model loaded.")
+        logger.info("Refiner Model loaded successfully.")
 
     def _sanitize_prompt(self, prompt, max_len=50):
-        """Sanitizes the prompt to be used as a filename."""
+        """Sanitizes the prompt string to be safe for use as a filename."""
         truncated_prompt = prompt.split(',')[0].split('.')[0].strip()
         if len(truncated_prompt) > max_len:
             truncated_prompt = truncated_prompt[:max_len]
@@ -109,7 +118,7 @@ class T2IEngine:
         return sanitized.strip('_').lower()
 
     def _create_output_path(self, prompt, use_refiner, lora_path=None):
-        """Generates a unique file path for the output image."""
+        """Generates a unique file path for the output image based on timestamp and prompt."""
         sanitized_name = self._sanitize_prompt(prompt)
         now = datetime.now()
         date_str = now.strftime("%Y%m%d")
@@ -125,30 +134,31 @@ class T2IEngine:
 
     def generate(self, prompt, negative_prompt="", steps=30, guidance_scale=7.5, seed=None, use_refiner=False, lora_path=None, lora_scale=1.0):
         """
-        Generates an image and saves it with embedded metadata.
+        Generates an image from the prompt and saves it with embedded metadata.
+        Returns the path to the saved image.
         """
         output_path = self._create_output_path(prompt, use_refiner, lora_path)
 
-        # Ensure models are loaded
+        # Ensure required models are loaded
         self.load_base_model(lora_path=lora_path) 
         if use_refiner:
             self.load_refiner_model()
 
-        # Set Seed
+        # Set random seed for reproducibility
         if seed is None:
             generator = None
-            seed_value = "Random" # For metadata
+            seed_value = "Random" # Stored in metadata
         else:
             generator = torch.Generator(device="cpu").manual_seed(seed)
             seed_value = str(seed)
 
-        print(f"Generating for: '{prompt}' (Refiner: {use_refiner}, LoRA: {lora_path}, Scale: {lora_scale})")
+        logger.info(f"Generating image. Prompt: '{prompt[:50]}...', Refiner: {use_refiner}, LoRA: {lora_path}")
         
         cross_attn_kwargs = {}
         if self.base_pipeline.has_lora:
             cross_attn_kwargs["scale"] = lora_scale
 
-        # --- Inference ---
+        # --- Inference Process ---
         if not use_refiner:
             image = self.base_pipeline(
                 prompt=prompt,
@@ -159,7 +169,7 @@ class T2IEngine:
                 cross_attention_kwargs=cross_attn_kwargs if self.base_pipeline.has_lora else None
             ).images[0]
         else:
-            # Ensemble of Experts (Base + Refiner)
+            # Ensemble of Experts approach (Base + Refiner)
             high_noise_frac = 0.8
             latents = self.base_pipeline(
                 prompt=prompt,
@@ -196,17 +206,17 @@ class T2IEngine:
         metadata.add_text("Software", "Python Local T2I Engine")
 
         image.save(output_path, pnginfo=metadata)
-        print(f"Image saved to: {output_path}")
+        logger.info(f"Image saved successfully to: {output_path}")
         
-        # Cleanup VRAM if needed (optional)
+        # Cleanup VRAM (optional, depending on usage pattern)
         gc.collect()
         torch.cuda.empty_cache()
         
         return output_path
 
     def cleanup(self):
-        """Explicitly unloads pipelines to free VRAM."""
-        print("Unloading pipelines and clearing VRAM...")
+        """Explicitly unloads pipelines to free VRAM for model switching."""
+        logger.info("Unloading pipelines and clearing VRAM...")
         
         if self.base_pipeline is not None:
             del self.base_pipeline
@@ -223,4 +233,4 @@ class T2IEngine:
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-        print("VRAM cleanup complete.")
+        logger.info("VRAM cleanup complete.")

@@ -38,7 +38,9 @@ output_images/
 temp/
 
 # Logs
+app.log
 *.log
+*/*.log
 
 # Models: Checkpoints, LoRA
 models/
