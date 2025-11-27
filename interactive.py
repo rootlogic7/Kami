@@ -109,6 +109,28 @@ def select_file_from_list(file_type, current_path, directory, hf_allowed=False):
 
     if choice_lower == 'x' and file_type == "LoRA":
         return None
+    
+    if choice.isdigit():
+        idx = int(choice)
+        if idx == 0:
+            return current_path
+        elif 1 <= idx <= len(file_list):
+            return os.path.join(directory, file_list[idx-1])
+        else:
+            print("Ungültige Nummer ausgewahlt.")
+            return current_path
+
+    if hf_allowed and choice_lower == 'id':
+        hf_id = input("Bitte HuggingFace ID eingeben: ").strip()
+        if hf_id:
+            return hf_id
+        return current_path
+
+    if choice_lower == 'a':
+        raw_path = input("Bitte Pfad eingeben: ").strip()
+        return get_clean_path(raw_path)
+
+    return current_path
 
 def load_favorites():
     if os.path.exists(FAV_FILE):
