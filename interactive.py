@@ -102,6 +102,10 @@ def print_header(config):
     
     console.print(table)
     
+    # Aktueller Prompt Indikator (Falls geladen)
+    if config.prompt:
+        console.print(f"[dim]Aktueller Prompt: {config.prompt[:90]}...[/dim]", style="italic grey50")
+
     # Footer Actions
     actions = "[bold white][ENTER][/bold white] Generate | [bold white][F][/bold white] Favorites | [bold white][Q][/bold white] Quit"
     console.print(Panel(actions, box=box.MINIMAL, style="grey50"))
@@ -272,8 +276,13 @@ def main():
             try:
                 load_index = int(fav_choice) - 1
                 if 0 <= load_index < len(config.favourites):
+                    # WICHTIG: Prompt laden
                     config.prompt = config.favourites[load_index]
-                    console.print("[green]✅ Favorit geladen.[/green]")
+                    console.print(f"[green]✅ Favorit geladen:[/green] {config.prompt[:50]}...")
+                    # Wir warten hier nicht mehr auf Input, sondern kehren direkt zum Menu zurück,
+                    # damit man sofort ENTER drücken kann.
+                else:
+                    console.print("[red]Ungültige Nummer.[/red]")
                     input("Weiter...")
             except: pass
 
@@ -287,10 +296,21 @@ def main():
             config.neg_prompt = Prompt.ask("Neuer Negative Prompt", default=config.neg_prompt)
 
         elif choice == '':
-            prompt_input = Prompt.ask("\n✨ [bold yellow]PROMPT[/bold yellow]")
+            # WICHTIG: Hier nutzen wir config.prompt als Default-Wert
+            # Wenn config.prompt leer ist, ist der Default None (User muss tippen)
+            default_prompt = config.prompt if config.prompt else None
+            
+            prompt_text = "\n✨ [bold yellow]PROMPT[/bold yellow]"
+            if default_prompt:
+                prompt_text += f" [dim](Enter für: {default_prompt[:20]}...)[/dim]"
+
+            prompt_input = Prompt.ask(prompt_text, default=default_prompt)
             
             if not prompt_input:
                 continue
+            
+            # Aktualisieren des gespeicherten Prompts für die nächste Runde
+            config.prompt = prompt_input
 
             if engine is None:
                 try:
@@ -323,12 +343,10 @@ def main():
                 # --- PREVIEW LOGIC ---
                 console.print(f"[bold green]✅ Gespeichert:[/bold green] {saved_path}")
                 
-                # Bild im Terminal anzeigen (Kitty/Ghostty)
                 if is_kitty_compatible():
                     console.print("\n[bold cyan]Vorschau:[/bold cyan]")
                     print_image_preview(saved_path)
                 else:
-                    # Fallback für andere Terminals
                     if os.name == 'nt':
                         os.startfile(saved_path)
                     elif sys.platform == 'darwin':
