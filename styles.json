@@ -1,0 +1,32 @@
+{
+    "None": {
+        "name": "No Style",
+        "pos": "",
+        "neg": ""
+    },
+    "Cinematic": {
+        "name": "Cinematic (Movies)",
+        "pos": "cinematic shot, dynamic lighting, 70mm, depth of field, color graded, ",
+        "neg": "cartoon, illustration, flat, 3d render, "
+    },
+    "Anime": {
+        "name": "Anime (Modern)",
+        "pos": "anime style, key visual, vibrant, studio ghibli, makoto shinkai, ",
+        "neg": "photo, realistic, 3d, "
+    },
+    "Photographic": {
+        "name": "Photorealistic",
+        "pos": "raw photo, 8k uhd, dslr, soft lighting, high quality, film grain, Fujifilm XT3, ",
+        "neg": "drawing, painting, illustration, glitch, deformed, "
+    },
+    "Digital Art": {
+        "name": "Digital Art",
+        "pos": "concept art, digital painting, mystery, elegant, highly detailed, artstation, ",
+        "neg": "photo, realistic, grain, "
+    },
+    "Pixel Art": {
+        "name": "Pixel Art",
+        "pos": "pixel art, 16-bit, retro game, dithering, ",
+        "neg": "blur, vector, smooth, realistic, "
+    }
+}
