@@ -1,9 +1,19 @@
 import os
 import sys
-import shlex
 import json
-
+import base64
 from app.engine import T2IEngine
+
+# Rich Imports für das UI
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.layout import Layout
+from rich.text import Text
+from rich import box
+from rich.prompt import Prompt, FloatPrompt, IntPrompt, Confirm
+
+console = Console()
 
 CHECKPOINTS_DIR = "models/checkpoints"
 LORAS_DIR = "models/loras"
@@ -33,42 +43,71 @@ class SessionConfig:
 def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
 
+def is_kitty_compatible():
+    """Prüft auf Kitty oder Ghostty Terminal."""
+    term = os.environ.get("TERM", "").lower()
+    term_program = os.environ.get("TERM_PROGRAM", "").lower()
+    return "kitty" in term or "ghostty" in term_program
+
+def print_image_preview(image_path):
+    """Zeigt das Bild direkt im Terminal an (Kitty Protocol)."""
+    if not is_kitty_compatible():
+        return
+
+    try:
+        # Wir nutzen das 'Local File' Feature des Kitty Protokolls (t=f)
+        # Pfad muss base64 codiert werden
+        abs_path = os.path.abspath(image_path)
+        b64_path = base64.b64encode(abs_path.encode('utf-8')).decode('ascii')
+        
+        # Escape Code: 
+        # a=T (Transmit and Display), t=f (Type=File), f=100 (PNG/Auto detection)
+        sys.stdout.write(f"\x1b_Gf=100,a=T,t=f;{b64_path}\x1b\\")
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+    except Exception as e:
+        console.print(f"[yellow]Vorschau fehlgeschlagen: {e}[/yellow]")
+
 def print_header(config):
     clear_screen()
-    print("================================================================")
-    print("       🚀 PYTHON SDXL GENERATOR - INTERACTIVE SESSION")
-    print("================================================================")
-
-    current_path = config.model_path
     
+    # Header Panel
+    console.print(Panel("[bold magenta]🚀 PYTHON SDXL GENERATOR[/bold magenta] - [dim]Interactive Session[/dim]", box=box.DOUBLE))
+
+    # Info Table erstellen
+    table = Table(show_header=False, box=box.ROUNDED, expand=True)
+    table.add_column("Setting", style="cyan")
+    table.add_column("Value", style="bold white")
+    table.add_column("Key", style="dim green", justify="right")
+
+    # Modell Name kürzen
+    current_path = config.model_path
     if current_path.lower().endswith((".safetensors", ".ckpt")):
         model_name = os.path.basename(current_path)
     else:
         model_name = current_path
-        
-    if len(model_name) > 60:
-        model_name = model_name[:27] + "..." + model_name[-27:]
-
+    if len(model_name) > 40: model_name = model_name[:17] + "..." + model_name[-20:]
 
     lora_name = os.path.basename(config.lora_path) if config.lora_path else 'None'
-    
-    print(f" [M] Model:     {model_name}")
-    print(f" [L] LoRA:      {lora_name} (Scale: {config.lora_scale})")
-    print(f" [R] Refiner:   {'ON' if config.use_refiner else 'OFF'}")
-    print(f" [P] Pony Mode: {'🦄 ON' if config.pony_mode else 'OFF'} (Auto-Prefixes)")
 
-    print("----------------------------------------------------------------")
-    print(f" [1] Steps:     {config.steps}")
-    print(f" [2] Guidance:  {config.guidance}")
-    print(f" [3] Neg:       {config.neg_prompt[:50]}...")
-    print("================================================================")
-    print(" [ENTER] Prompt eingeben & Generieren")
-    print(f" [F] Favoriten ({len(config.favourites)}) | [S] Einstellungen ändern | [Q] Beenden")
-    print("================================================================")
+    # Zeilen hinzufügen
+    table.add_row("Model", model_name, "[M]")
+    table.add_row("LoRA", f"{lora_name} (Scale: {config.lora_scale})", "[L]")
+    table.add_row("Refiner", "ON" if config.use_refiner else "OFF", "[R]")
+    table.add_row("Pony Mode", "🦄 ON" if config.pony_mode else "OFF", "[P]")
+    table.add_section()
+    table.add_row("Steps", str(config.steps), "[1]")
+    table.add_row("Guidance", str(config.guidance), "[2]")
+    table.add_row("Neg Prompt", f"{config.neg_prompt[:60]}...", "[3]")
+    
+    console.print(table)
+    
+    # Footer Actions
+    actions = "[bold white][ENTER][/bold white] Generate | [bold white][F][/bold white] Favorites | [bold white][Q][/bold white] Quit"
+    console.print(Panel(actions, box=box.MINIMAL, style="grey50"))
 
 def get_clean_path(path_input):
     return path_input.strip().strip('"').strip("'")
-
 
 def get_file_list(directory, file_exts=('.safetensors', '.ckpt')):
     if not os.path.exists(directory):
@@ -81,30 +120,31 @@ def get_file_list(directory, file_exts=('.safetensors', '.ckpt')):
     return sorted(files)
 
 def select_file_from_list(file_type, current_path, directory, hf_allowed=False):
-    print(f"\n--- {file_type} Auswahl ---")
+    console.print(f"\n[bold cyan]--- {file_type} Auswahl ---[/bold cyan]")
     file_list = get_file_list(directory)
     
     current_name = os.path.basename(current_path) if current_path else 'None'
-    print(f"[0] Aktuell Beibehalten: {current_name}")
-    if hf_allowed:
-        print(f"[ID] HuggingFace ID verwenden")
     
-    if file_list:
-        print(f"\nLokale Dateien in './{directory}':")
-        for i, filename in enumerate(file_list, 1):
-            print(f"[{i}] {filename}")
-    else:
-        print(f"\nKeine lokalen Dateien im Verzeichnis './{directory}' gefunden.")
+    table = Table(show_header=True, header_style="bold magenta", box=box.SIMPLE)
+    table.add_column("ID", style="cyan", width=4)
+    table.add_column("Filename", style="white")
     
-    print("\n[A] Manuellen Pfad/Text eingeben")
-    if file_type == "LoRA":
-         print("[X] LoRA deaktivieren")
-         
-    choice = input(f"Wahl (Nummer, A, X, ID oder [ENTER] für Beibehalten): ").strip()
+    table.add_row("0", f"Beibehalten: {current_name}")
     
-    if not choice:
-        return current_path
+    for i, filename in enumerate(file_list, 1):
+        table.add_row(str(i), filename)
+        
+    console.print(table)
+    
+    if not file_list:
+        console.print(f"[yellow]Keine lokalen Dateien in './{directory}' gefunden.[/yellow]")
 
+    print("\n[A] Manuellen Pfad eingeben")
+    if hf_allowed: print("[ID] HuggingFace ID verwenden")
+    if file_type == "LoRA": print("[X] LoRA deaktivieren")
+    
+    choice = Prompt.ask("Wahl", default="0")
+    
     choice_lower = choice.lower()
 
     if choice_lower == 'x' and file_type == "LoRA":
@@ -117,17 +157,16 @@ def select_file_from_list(file_type, current_path, directory, hf_allowed=False):
         elif 1 <= idx <= len(file_list):
             return os.path.join(directory, file_list[idx-1])
         else:
-            print("Ungültige Nummer ausgewahlt.")
+            console.print("[red]Ungültige Nummer.[/red]")
             return current_path
 
     if hf_allowed and choice_lower == 'id':
-        hf_id = input("Bitte HuggingFace ID eingeben: ").strip()
-        if hf_id:
-            return hf_id
+        hf_id = Prompt.ask("HuggingFace ID")
+        if hf_id: return hf_id
         return current_path
 
     if choice_lower == 'a':
-        raw_path = input("Bitte Pfad eingeben: ").strip()
+        raw_path = Prompt.ask("Pfad")
         return get_clean_path(raw_path)
 
     return current_path
@@ -138,7 +177,6 @@ def load_favorites():
             with open(FAV_FILE, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except json.JSONDecodeError:
-            print(f"Warnung: {FAV_FILE} ist beschädigt. Starte mit leerer Liste.")
             return []
     return []
 
@@ -147,8 +185,7 @@ def save_favorites(favorites):
         with open(FAV_FILE, 'w', encoding='utf-8') as f:
             json.dump(favorites, f, indent=4, ensure_ascii=False)
     except IOError as e:
-        print(f"Fehler beim Speichern der Favoriten: {e}")    
-
+        console.print(f"[red]Fehler beim Speichern: {e}[/red]")
 
 def main():
     config = SessionConfig()
@@ -156,10 +193,10 @@ def main():
     
     while True:
         print_header(config)
-        choice = input("\nBefehl oder [ENTER] für Generierung: ").strip().lower()
+        choice = console.input("\n[bold green]Befehl[/bold green] oder [bold white][ENTER][/bold white] für Generierung: ").strip().lower()
 
         if choice == 'q':
-            print("👋 Bis bald!")
+            console.print("[bold magenta]👋 Bis bald![/bold magenta]")
             break
 
         # --- MODEL SETTINGS ---
@@ -172,11 +209,8 @@ def main():
             )
             
             if new_path and new_path != config.model_path:
-                print(f"Modellpfad aktualisiert auf: {new_path}")
-                
-                if engine is not None:
-                    engine.cleanup()
-                
+                console.print(f"[green]Modellpfad aktualisiert auf: {new_path}[/green]")
+                if engine is not None: engine.cleanup()
                 config.model_path = new_path
                 engine = None
         
@@ -190,13 +224,8 @@ def main():
             
             if new_lora_path != config.lora_path:
                 config.lora_path = new_lora_path
-                
                 if new_lora_path is not None:
-                    scale = input(f"LoRA Scale (0.1 - 1.0) [Aktuell {config.lora_scale}]: ")
-                    try:
-                        config.lora_scale = float(scale) if scale else config.lora_scale
-                    except ValueError:
-                        print("Ungültige Skala. Behalte aktuellen Wert bei.")
+                    config.lora_scale = FloatPrompt.ask("LoRA Scale", default=config.lora_scale)
 
         elif choice == 'r':
             config.use_refiner = not config.use_refiner
@@ -204,90 +233,82 @@ def main():
         elif choice == 'p':
             config.pony_mode = not config.pony_mode
             if config.pony_mode:
-                print("🦄 Pony Modus aktiviert! Score-Tags werden automatisch hinzugefügt.")
+                console.print("[magenta]🦄 Pony Modus aktiviert![/magenta]")
                 if "score_4" not in config.neg_prompt:
                     config.neg_prompt = config.pony_neg + config.neg_prompt
             else:
-                 print("🦄 Pony Modus deaktiviert.")
+                 console.print("[grey50]Pony Modus deaktiviert.[/grey50]")
 
         elif choice == 'f':
-            print("\n--- Favoriten Prompts ---")
+            console.print("\n[bold cyan]--- Favoriten ---[/bold cyan]")
             if not config.favourites:
-                print("Keine Favoriten gespeichert.")
-                input("Drücke Enter...")
+                console.print("[yellow]Keine Favoriten gespeichert.[/yellow]")
+                input("Weiter...")
                 continue
+            
+            fav_table = Table(show_header=True, box=box.SIMPLE)
+            fav_table.add_column("#", style="cyan", width=3)
+            fav_table.add_column("Prompt", style="white")
             
             for i, fav in enumerate(config.favourites, 1):
-                print(f"[{i}] {fav[:80]}{'...' if len(fav) > 80 else ''}")
+                fav_table.add_row(str(i), f"{fav[:80]}...")
+            console.print(fav_table)
                 
-            print("\n[D] Prompt löschen | [ENTER] Abbrechen")
-            fav_choice = input("Wähle Nummer zum Laden oder D zum Löschen: ").strip()
+            console.print("[D] Löschen | [ENTER] Abbrechen")
+            fav_choice = Prompt.ask("Wahl")
             
-            if not fav_choice:
-                continue
+            if not fav_choice: continue
 
             if fav_choice.lower() == 'd':
                 try:
-                    del_index = int(input("Nummer des zu löschenden Prompts: ")) - 1
+                    del_index = IntPrompt.ask("Nummer zum Löschen") - 1
                     if 0 <= del_index < len(config.favourites):
-                        deleted_prompt = config.favourites.pop(del_index)
+                        deleted = config.favourites.pop(del_index)
                         save_favorites(config.favourites)
-                        print(f"Favorit gelöscht: {deleted_prompt[:40]}...")
-                    else:
-                        print("Ungültige Nummer.")
-                except ValueError:
-                    print("Ungültige Eingabe.")
-                input("Drücke Enter...")
+                        console.print(f"[red]Gelöscht: {deleted[:30]}...[/red]")
+                except: pass
                 continue
                 
             try:
                 load_index = int(fav_choice) - 1
                 if 0 <= load_index < len(config.favourites):
                     config.prompt = config.favourites[load_index]
-                    print(f"✅ Favorit geladen. Prompt: {config.prompt[:50]}...")
-                else:
-                    print("Ungültige Nummer.")
-            except ValueError:
-                print("Ungültige Eingabe.")
-            input("Drücke Enter...")
+                    console.print("[green]✅ Favorit geladen.[/green]")
+                    input("Weiter...")
+            except: pass
 
         elif choice == '1':
-            try:
-                val = int(input(f"Neue Steps (Aktuell {config.steps}): "))
-                config.steps = val
-            except ValueError: pass
+            config.steps = IntPrompt.ask("Neue Steps", default=config.steps)
         
         elif choice == '2':
-            try:
-                val = float(input(f"Neue Guidance (Aktuell {config.guidance}): "))
-                config.guidance = val
-            except ValueError: pass
+            config.guidance = FloatPrompt.ask("Neue Guidance", default=config.guidance)
         
         elif choice == '3':
-            val = input(f"Neuer Negative Prompt (Aktuell: {config.neg_prompt}): ")
-            if val: config.neg_prompt = val
+            config.neg_prompt = Prompt.ask("Neuer Negative Prompt", default=config.neg_prompt)
 
         elif choice == '':
-            prompt_input = input("\n✨ PROMPT: ")
+            prompt_input = Prompt.ask("\n✨ [bold yellow]PROMPT[/bold yellow]")
             
             if not prompt_input:
                 continue
 
             if engine is None:
                 try:
-                    engine = T2IEngine(base_model_id=config.model_path)
+                    with console.status("[bold green]Lade Modell...[/bold green]"):
+                        engine = T2IEngine(base_model_id=config.model_path)
                 except Exception as e:
-                    print(f"❌ Fehler beim Laden des Modells: {e}")
-                    input("Drücke Enter um fortzufahren...")
+                    console.print(f"[bold red]❌ Fehler beim Laden des Modells: {e}[/bold red]")
+                    input("Drücke Enter...")
                     continue
 
             final_prompt = prompt_input
             if config.pony_mode:
                 final_prompt = config.pony_prefix + prompt_input
             
-            print(f"\nGeneriere: {final_prompt[:80]}...")
+            console.print(f"\n[dim]Generiere: {final_prompt[:80]}...[/dim]")
             
             try:
+                # Generierung starten
                 saved_path = engine.generate(
                     prompt=final_prompt,
                     negative_prompt=config.neg_prompt,
@@ -299,24 +320,30 @@ def main():
                     lora_scale=config.lora_scale
                 )
                 
-                if os.name == 'nt':
-                    os.startfile(saved_path)
-                elif sys.platform == 'darwin':
-                    os.system(f'open "{saved_path}"')
+                # --- PREVIEW LOGIC ---
+                console.print(f"[bold green]✅ Gespeichert:[/bold green] {saved_path}")
+                
+                # Bild im Terminal anzeigen (Kitty/Ghostty)
+                if is_kitty_compatible():
+                    console.print("\n[bold cyan]Vorschau:[/bold cyan]")
+                    print_image_preview(saved_path)
+                else:
+                    # Fallback für andere Terminals
+                    if os.name == 'nt':
+                        os.startfile(saved_path)
+                    elif sys.platform == 'darwin':
+                        os.system(f'open "{saved_path}"')
 
-                save_fav = input("Prompt als Favorit speichern? [y/N]: ").strip().lower()
-                if save_fav == 'y':
+                if Confirm.ask("Als Favorit speichern?", default=False):
                     if final_prompt not in config.favourites:
                         config.favourites.append(final_prompt)
                         save_favorites(config.favourites)
-                        print("⭐ Prompt gespeichert!")
-                    else:
-                        print("Prompt ist bereits gespeichert.")
+                        console.print("[green]⭐ Gespeichert![/green]")
                 
-                input("\n✅ Fertig! Drücke [ENTER] für das Menü...")
+                input("\nDrücke [ENTER]...")
 
             except Exception as e:
-                print(f"\n❌ Fehler bei der Generierung: {e}")
+                console.print(f"\n[bold red]❌ Fehler: {e}[/bold red]")
                 import traceback
                 traceback.print_exc()
                 input("Drücke Enter...")
@@ -328,4 +355,4 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\nAbbruch.")
+        console.print("\n[red]Abbruch.[/red]")
