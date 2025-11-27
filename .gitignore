@@ -38,7 +38,6 @@ output_images/
 temp/
 
 # Logs
-app.log
 *.log
 */*.log
 
@@ -55,5 +54,6 @@ favorites.json
 session_config.json
 app.log
 
-# Python Cache in subdirectories
+# Python Cache
+__pycache__/
 app/__pycache__/
