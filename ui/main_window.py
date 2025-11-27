@@ -1,15 +1,17 @@
 import os
+import qtawesome as qta
 from PIL import Image
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QPushButton, QTextEdit, QSlider, QCheckBox, 
-    QFileDialog, QScrollArea, QGridLayout, QTabWidget, QSplitter,
+    QFileDialog, QScrollArea, QGridLayout, QSplitter,
     QProgressBar, QMessageBox, QComboBox, QListWidget, QGroupBox,
-    QInputDialog, QLineEdit, QSpinBox, QDoubleSpinBox, QStackedWidget
+    QInputDialog, QLineEdit, QSpinBox, QDoubleSpinBox, QStackedWidget,
+    QButtonGroup, QFrame
 )
-from PyQt6.QtCore import Qt, QThread, QThreadPool
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtCore import Qt, QThread, QThreadPool, QSize
+from PyQt6.QtGui import QPixmap, QIcon
 
 from app.engine import T2IEngine
 from app.config import SessionConfig, STYLES
@@ -17,9 +19,8 @@ from app.utils import get_file_list
 from app.style import get_stylesheet, CAT_COLORS
 from app.database import get_filtered_images, get_all_models
 
-# Importiere unsere ausgelagerten Komponenten
 from ui.workers import GeneratorWorker, DBScannerWorker, ThumbnailLoader
-from ui.widgets import ClickableLabel, setup_combo_view
+from ui.widgets import ClickableLabel, setup_combo_view, ImageViewerDialog
 
 CHECKPOINTS_DIR = "models/checkpoints"
 LORAS_DIR = "models/loras"
@@ -27,7 +28,7 @@ LORAS_DIR = "models/loras"
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Kami - SDXL Station (Modular)")
+        self.setWindowTitle("Kami - SDXL Station")
         self.resize(1600, 950)
         
         self.engine = T2IEngine()
@@ -35,6 +36,12 @@ class MainWindow(QMainWindow):
         self.history = []
         self.input_img_pil = None
         self.threadpool = QThreadPool()
+        
+        # Galerie Status Variablen
+        self.gallery_results = []       
+        self.gallery_page_size = 50     
+        self.gallery_current_page = 0 
+        self.selected_gallery_item = None
         
         os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
         os.makedirs(LORAS_DIR, exist_ok=True)
@@ -47,63 +54,126 @@ class MainWindow(QMainWindow):
     def apply_theme(self):
         self.setStyleSheet(get_stylesheet())
 
+    def create_nav_btn(self, text, icon_name):
+        btn = QPushButton(f" {text}")
+        btn.setIcon(qta.icon(icon_name, color=CAT_COLORS['SUBTEXT0']))
+        btn.setIconSize(QSize(18, 18))
+        btn.setObjectName("NavBtn")
+        btn.setCheckable(True)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        return btn
+
     def init_ui(self):
-        main_widget = QWidget()
-        self.setCentralWidget(main_widget)
-        main_layout = QHBoxLayout(main_widget)
+        # === MAIN LAYOUT (Vertical) ===
+        central = QWidget()
+        self.setCentralWidget(central)
+        main_layout = QVBoxLayout(central)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # 1. TOP NAVIGATION BAR
+        self.navbar = QWidget()
+        self.navbar.setObjectName("NavBar")
+        self.navbar.setFixedHeight(60)
+        nav_layout = QHBoxLayout(self.navbar)
+        nav_layout.setContentsMargins(20, 0, 20, 0)
+        nav_layout.setSpacing(10)
+
+        # Nav Buttons
+        self.btn_nav_gen = self.create_nav_btn("Generate", "fa5s.magic")
+        self.btn_nav_models = self.create_nav_btn("Models", "fa5s.sliders-h")
+        self.btn_nav_favs = self.create_nav_btn("Favorites", "fa5s.star")
+        self.btn_nav_gallery = self.create_nav_btn("Gallery", "fa5s.images")
+
+        # Exclusive Button Group
+        self.nav_group = QButtonGroup(self)
+        self.nav_group.addButton(self.btn_nav_gen, 0)
+        self.nav_group.addButton(self.btn_nav_models, 1)
+        self.nav_group.addButton(self.btn_nav_favs, 2)
+        self.nav_group.addButton(self.btn_nav_gallery, 3)
+        self.nav_group.idClicked.connect(self.switch_view)
+
+        nav_layout.addWidget(self.btn_nav_gen)
+        nav_layout.addWidget(self.btn_nav_models)
+        nav_layout.addWidget(self.btn_nav_favs)
+        nav_layout.addWidget(self.btn_nav_gallery)
+        nav_layout.addStretch() 
+
+        main_layout.addWidget(self.navbar)
+
+        # 2. CONTENT STACK
+        self.stack = QStackedWidget()
+        main_layout.addWidget(self.stack)
+
+        # --- INIT PAGES ---
+        self.init_page_gen()
+        self.init_page_models()
+        self.init_page_favs()
+        self.init_page_gallery()
+
+        # Set Start Page
+        self.btn_nav_gen.setChecked(True)
+        self.stack.setCurrentIndex(0)
+
+    def switch_view(self, id):
+        self.stack.setCurrentIndex(id)
+        if id == 3: self.refresh_gallery_view()
+        if id == 2: self.refresh_favorites_list()
+
+    # ==========================
+    # PAGE 1: GENERATE
+    # ==========================
+    def init_page_gen(self):
+        page = QWidget()
+        layout = QHBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        main_layout.addWidget(splitter)
+        splitter.setHandleWidth(2)
+        
+        # --- LEFT CONTROLS ---
+        controls_container = QWidget()
+        controls_container.setMinimumWidth(400)
+        controls_container.setMaximumWidth(500)
+        c_layout = QVBoxLayout(controls_container)
+        c_layout.setContentsMargins(15, 15, 15, 15)
+        c_layout.setSpacing(15)
 
-        # === SIDEBAR ===
-        sidebar = QWidget()
-        sidebar_layout = QVBoxLayout(sidebar)
-        sidebar.setMinimumWidth(400)
-        sidebar.setMaximumWidth(500)
+        # Scroll Area for Controls
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll_content = QWidget()
+        sc_layout = QVBoxLayout(scroll_content)
         
-        self.side_tabs = QTabWidget()
-        
-        self.tab_gen = QWidget()
-        self.tab_models_nav = QWidget()
-        self.tab_favs_nav = QWidget()
-        self.tab_gallery_nav = QWidget()
-        
-        self.side_tabs.addTab(self.tab_gen, "Generate")
-        self.side_tabs.addTab(self.tab_models_nav, "Models")
-        self.side_tabs.addTab(self.tab_favs_nav, "Favorites")
-        self.side_tabs.addTab(self.tab_gallery_nav, "Gallery")
-        sidebar_layout.addWidget(self.side_tabs)
-
-        # --- Tab: Generate ---
-        gen_layout = QVBoxLayout(self.tab_gen)
-        
-        mode_group = QGroupBox("Mode")
-        mode_layout = QHBoxLayout(mode_group)
-        self.btn_mode_t2i = QPushButton("T2I")
+        # Mode
+        mode_layout = QHBoxLayout()
+        self.btn_mode_t2i = QPushButton(" Text to Image")
+        self.btn_mode_t2i.setIcon(qta.icon('fa5s.pen'))
         self.btn_mode_t2i.setObjectName("ModeBtn")
         self.btn_mode_t2i.setCheckable(True)
         self.btn_mode_t2i.setChecked(True)
         self.btn_mode_t2i.clicked.connect(lambda: self.toggle_mode("T2I"))
-        
-        self.btn_mode_i2i = QPushButton("I2I")
+        self.btn_mode_i2i = QPushButton(" Image to Image")
+        self.btn_mode_i2i.setIcon(qta.icon('fa5s.image'))
         self.btn_mode_i2i.setObjectName("ModeBtn")
         self.btn_mode_i2i.setCheckable(True)
         self.btn_mode_i2i.clicked.connect(lambda: self.toggle_mode("I2I"))
-        
         mode_layout.addWidget(self.btn_mode_t2i)
         mode_layout.addWidget(self.btn_mode_i2i)
-        gen_layout.addWidget(mode_group)
+        sc_layout.addLayout(mode_layout)
 
+        # I2I Group
         self.i2i_group = QGroupBox("Input Image")
         i2i_layout = QVBoxLayout(self.i2i_group)
-        self.lbl_input_preview = QLabel("Drop/Load")
+        self.lbl_input_preview = QLabel("Drop or Load Image")
         self.lbl_input_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_input_preview.setStyleSheet(f"border: 2px dashed {CAT_COLORS['SURFACE1']}; min-height: 100px;")
+        self.lbl_input_preview.setStyleSheet(f"border: 2px dashed {CAT_COLORS['SURFACE1']}; min-height: 120px; color: {CAT_COLORS['SUBTEXT0']};")
         i2i_layout.addWidget(self.lbl_input_preview)
-        
-        btn_load = QPushButton("Load")
+        btn_load = QPushButton(" Load Input")
+        btn_load.setIcon(qta.icon('fa5s.folder-open', color=CAT_COLORS['TEXT']))
         btn_load.clicked.connect(self.load_input_image_dialog)
         i2i_layout.addWidget(btn_load)
-        
         i2i_layout.addWidget(QLabel("Denoising Strength"))
         s_layout = QHBoxLayout()
         self.slider_strength = QSlider(Qt.Orientation.Horizontal)
@@ -116,19 +186,22 @@ class MainWindow(QMainWindow):
         s_layout.addWidget(self.slider_strength)
         s_layout.addWidget(self.spin_strength)
         i2i_layout.addLayout(s_layout)
-        gen_layout.addWidget(self.i2i_group)
+        sc_layout.addWidget(self.i2i_group)
         self.i2i_group.setVisible(False)
 
-        gen_layout.addWidget(QLabel("Positive Prompt"))
+        # Prompts
+        sc_layout.addWidget(QLabel("Positive Prompt"))
         self.txt_prompt = QTextEdit()
-        self.txt_prompt.setMaximumHeight(120)
-        gen_layout.addWidget(self.txt_prompt)
-        
-        gen_layout.addWidget(QLabel("Negative Prompt"))
+        self.txt_prompt.setPlaceholderText("A majestic lion in the sunset...")
+        self.txt_prompt.setMaximumHeight(100)
+        sc_layout.addWidget(self.txt_prompt)
+        sc_layout.addWidget(QLabel("Negative Prompt"))
         self.txt_neg = QTextEdit()
-        self.txt_neg.setMaximumHeight(80)
-        gen_layout.addWidget(self.txt_neg)
+        self.txt_neg.setPlaceholderText("blur, ugly, low quality...")
+        self.txt_neg.setMaximumHeight(60)
+        sc_layout.addWidget(self.txt_neg)
 
+        # Parameters
         p_group = QGroupBox("Parameters")
         p_layout = QGridLayout(p_group)
         p_layout.addWidget(QLabel("Steps:"), 0, 0)
@@ -140,7 +213,6 @@ class MainWindow(QMainWindow):
         self.sync_slider_spinbox(self.slider_steps, self.spin_steps, 1.0)
         p_layout.addWidget(self.slider_steps, 0, 1)
         p_layout.addWidget(self.spin_steps, 0, 2)
-        
         p_layout.addWidget(QLabel("CFG:"), 1, 0)
         self.slider_cfg = QSlider(Qt.Orientation.Horizontal)
         self.slider_cfg.setRange(10, 200)
@@ -151,76 +223,72 @@ class MainWindow(QMainWindow):
         self.sync_slider_spinbox(self.slider_cfg, self.spin_cfg, 10.0)
         p_layout.addWidget(self.slider_cfg, 1, 1)
         p_layout.addWidget(self.spin_cfg, 1, 2)
-        
         p_layout.addWidget(QLabel("Seed:"), 2, 0)
         self.txt_seed = QLineEdit()
-        self.txt_seed.setPlaceholderText("Random")
+        self.txt_seed.setPlaceholderText("Empty = Random")
         p_layout.addWidget(self.txt_seed, 2, 1, 1, 2)
-        gen_layout.addWidget(p_group)
-        gen_layout.addStretch()
+        sc_layout.addWidget(p_group)
+        sc_layout.addStretch()
+        
+        scroll.setWidget(scroll_content)
+        c_layout.addWidget(scroll)
 
-        # --- Tab: Gallery Nav ---
-        gal_nav_layout = QVBoxLayout(self.tab_gallery_nav)
-        gal_nav_layout.addWidget(QLabel("Search Prompts"))
-        self.txt_search = QLineEdit()
-        self.txt_search.setPlaceholderText("type to search...")
-        self.txt_search.textChanged.connect(self.refresh_gallery_view)
-        gal_nav_layout.addWidget(self.txt_search)
-        
-        gal_nav_layout.addWidget(QLabel("Filter by Model"))
-        self.combo_filter_model = setup_combo_view(QComboBox())
-        self.combo_filter_model.addItem("All")
-        self.combo_filter_model.currentIndexChanged.connect(self.refresh_gallery_view)
-        gal_nav_layout.addWidget(self.combo_filter_model)
-        
-        gal_nav_layout.addWidget(QLabel("Sort By"))
-        self.combo_sort = setup_combo_view(QComboBox())
-        self.combo_sort.addItems(["Newest", "Oldest", "Steps (High-Low)"])
-        self.combo_sort.currentIndexChanged.connect(self.refresh_gallery_view)
-        gal_nav_layout.addWidget(self.combo_sort)
-        
-        btn_scan = QPushButton("Rescan Folder")
-        btn_scan.clicked.connect(self.start_db_scan)
-        gal_nav_layout.addWidget(btn_scan)
-        gal_nav_layout.addStretch()
-
-        # --- Shared Generate Button ---
+        # Generate Button Area
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
-        sidebar_layout.addWidget(self.progress_bar)
+        self.progress_bar.setFixedHeight(5)
+        self.progress_bar.setTextVisible(False)
+        c_layout.addWidget(self.progress_bar)
         
-        self.btn_generate = QPushButton("GENERATE IMAGE")
+        self.btn_generate = QPushButton(" GENERATE")
+        self.btn_generate.setIcon(qta.icon('fa5s.rocket', color=CAT_COLORS['BASE']))
+        self.btn_generate.setIconSize(QSize(20, 20))
         self.btn_generate.setObjectName("GenerateBtn")
-        self.btn_generate.setMinimumHeight(60)
+        self.btn_generate.setMinimumHeight(55)
+        self.btn_generate.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_generate.clicked.connect(self.start_generation)
-        sidebar_layout.addWidget(self.btn_generate)
+        c_layout.addWidget(self.btn_generate)
 
-        # ==================== RIGHT STACK ====================
-        self.right_stack = QStackedWidget()
+        # --- RIGHT PREVIEW ---
+        preview_container = QWidget()
+        pc_layout = QVBoxLayout(preview_container)
+        pc_layout.setContentsMargins(20, 20, 20, 20)
         
-        # VIEW 0: PREVIEW
-        gen_view = QWidget()
-        gv_layout = QVBoxLayout(gen_view)
-        self.lbl_main_preview = QLabel("Ready to dream...")
+        self.lbl_main_preview = QLabel()
         self.lbl_main_preview.setObjectName("PreviewLabel")
         self.lbl_main_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_main_preview.setMinimumHeight(500)
-        gv_layout.addWidget(self.lbl_main_preview)
+        self.lbl_main_preview.setSizePolicy(self.lbl_main_preview.sizePolicy().horizontalPolicy(), self.lbl_main_preview.sizePolicy().verticalPolicy())
+        placeholder = qta.icon('fa5s.image', color=CAT_COLORS['SURFACE1']).pixmap(QSize(128, 128))
+        self.lbl_main_preview.setPixmap(placeholder)
+        pc_layout.addWidget(self.lbl_main_preview, 1)
         
-        gv_layout.addWidget(QLabel("Session History"))
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
+        pc_layout.addWidget(QLabel("Session History"))
+        h_scroll = QScrollArea()
+        h_scroll.setWidgetResizable(True)
+        h_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        h_scroll.setFixedHeight(180)
         self.history_grid = QWidget()
         self.history_layout = QGridLayout(self.history_grid)
         self.history_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        scroll.setWidget(self.history_grid)
-        gv_layout.addWidget(scroll)
-        self.right_stack.addWidget(gen_view)
+        self.history_layout.setContentsMargins(0,0,0,0)
+        h_scroll.setWidget(self.history_grid)
+        pc_layout.addWidget(h_scroll)
 
-        # VIEW 1: MODELS
-        models_view = QWidget()
-        mv_layout = QVBoxLayout(models_view)
-        mv_layout.addWidget(QLabel("Model Configuration"))
+        splitter.addWidget(controls_container)
+        splitter.addWidget(preview_container)
+        splitter.setSizes([450, 1150])
+        
+        layout.addWidget(splitter)
+        self.stack.addWidget(page)
+
+    # ==========================
+    # PAGE 2: MODELS
+    # ==========================
+    def init_page_models(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(50, 50, 50, 50)
+        layout.addWidget(QLabel("<h2>Model Configuration</h2>"))
         
         m_group = QGroupBox("Base Model & Refiner")
         m_grid = QGridLayout(m_group)
@@ -230,10 +298,9 @@ class MainWindow(QMainWindow):
             self.combo_model.addItem(os.path.join(CHECKPOINTS_DIR, f))
         m_grid.addWidget(QLabel("Checkpoint:"), 0, 0)
         m_grid.addWidget(self.combo_model, 0, 1)
-        
         self.chk_refiner = QCheckBox("Use SDXL Refiner")
         m_grid.addWidget(self.chk_refiner, 1, 0, 1, 2)
-        mv_layout.addWidget(m_group)
+        layout.addWidget(m_group)
         
         l_group = QGroupBox("LoRA Configuration")
         l_grid = QGridLayout(l_group)
@@ -243,7 +310,6 @@ class MainWindow(QMainWindow):
             self.combo_lora.addItem(os.path.join(LORAS_DIR, f))
         l_grid.addWidget(QLabel("LoRA File:"), 0, 0)
         l_grid.addWidget(self.combo_lora, 0, 1)
-        
         l_grid.addWidget(QLabel("Scale:"), 1, 0)
         ls_layout = QHBoxLayout()
         self.slider_lora = QSlider(Qt.Orientation.Horizontal)
@@ -256,7 +322,7 @@ class MainWindow(QMainWindow):
         ls_layout.addWidget(self.slider_lora)
         ls_layout.addWidget(self.spin_lora)
         l_grid.addLayout(ls_layout, 1, 1)
-        mv_layout.addWidget(l_group)
+        layout.addWidget(l_group)
         
         s_group = QGroupBox("Styles & Advanced")
         s_grid = QGridLayout(s_group)
@@ -266,18 +332,21 @@ class MainWindow(QMainWindow):
         self.combo_style.currentTextChanged.connect(lambda t: setattr(self.config, 'current_style', t))
         s_grid.addWidget(QLabel("Preset:"), 0, 0)
         s_grid.addWidget(self.combo_style, 0, 1)
-        
         self.chk_pony = QCheckBox("Pony Mode (Score Tags)")
         s_grid.addWidget(self.chk_pony, 1, 0)
         self.chk_freeu = QCheckBox("FreeU (Quality Boost)")
         s_grid.addWidget(self.chk_freeu, 1, 1)
-        mv_layout.addWidget(s_group)
-        mv_layout.addStretch()
-        self.right_stack.addWidget(models_view)
+        layout.addWidget(s_group)
+        layout.addStretch()
+        self.stack.addWidget(page)
 
-        # VIEW 2: FAVORITES
-        fav_view = QWidget()
-        fv_layout = QHBoxLayout(fav_view)
+    # ==========================
+    # PAGE 3: FAVORITES
+    # ==========================
+    def init_page_favs(self):
+        page = QWidget()
+        layout = QHBoxLayout(page)
+        
         left_f = QWidget()
         left_fl = QVBoxLayout(left_f)
         left_fl.addWidget(QLabel("Saved Favorites"))
@@ -297,17 +366,21 @@ class MainWindow(QMainWindow):
         right_fl.addWidget(self.fav_txt_neg)
         
         f_btn_layout = QHBoxLayout()
-        btn_load_fav = QPushButton("Load to Generator")
+        btn_load_fav = QPushButton(" Load")
+        btn_load_fav.setIcon(qta.icon('fa5s.upload', color=CAT_COLORS['TEXT']))
         btn_load_fav.setObjectName("LoadBtn")
         btn_load_fav.clicked.connect(self.load_favorite_to_gen)
         
-        btn_update_fav = QPushButton("Update Selected")
+        btn_update_fav = QPushButton(" Update")
+        btn_update_fav.setIcon(qta.icon('fa5s.save', color=CAT_COLORS['TEXT']))
         btn_update_fav.clicked.connect(self.update_favorite)
         
-        btn_new_fav = QPushButton("Save New")
+        btn_new_fav = QPushButton(" New")
+        btn_new_fav.setIcon(qta.icon('fa5s.plus', color=CAT_COLORS['TEXT']))
         btn_new_fav.clicked.connect(self.save_new_favorite)
         
-        btn_del_fav = QPushButton("Delete")
+        btn_del_fav = QPushButton(" Delete")
+        btn_del_fav.setIcon(qta.icon('fa5s.trash', color=CAT_COLORS['BASE']))
         btn_del_fav.setObjectName("DeleteBtn")
         btn_del_fav.clicked.connect(self.delete_favorite)
         
@@ -317,40 +390,139 @@ class MainWindow(QMainWindow):
         f_btn_layout.addWidget(btn_del_fav)
         right_fl.addLayout(f_btn_layout)
         
-        fv_layout.addWidget(left_f, 1)
-        fv_layout.addWidget(right_f, 2)
-        self.right_stack.addWidget(fav_view)
+        layout.addWidget(left_f, 1)
+        layout.addWidget(right_f, 2)
+        self.stack.addWidget(page)
 
-        # VIEW 3: GALLERY
-        gal_view = QWidget()
-        gal_v_layout = QVBoxLayout(gal_view)
-        gal_scroll = QScrollArea()
-        gal_scroll.setWidgetResizable(True)
+    # ==========================
+    # PAGE 4: GALLERY (REMASTERED)
+    # ==========================
+    def init_page_gallery(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        # --- 1. HEADER ---
+        header_container = QWidget()
+        header_container.setStyleSheet(f"background-color: {CAT_COLORS['MANTLE']}; border-bottom: 1px solid {CAT_COLORS['SURFACE0']};")
+        header_container.setFixedHeight(70)
+        
+        header_layout = QHBoxLayout(header_container)
+        header_layout.setContentsMargins(20, 10, 20, 10)
+        header_layout.setSpacing(15)
+        
+        self.txt_search = QLineEdit()
+        self.txt_search.setPlaceholderText("🔍 Suche nach Prompts, Seeds oder Modellen...")
+        self.txt_search.setMinimumHeight(40)
+        self.txt_search.setStyleSheet(f"""
+            QLineEdit {{ 
+                font-size: 14px; padding-left: 10px; border-radius: 20px; 
+                border: 1px solid {CAT_COLORS['SURFACE1']}; background-color: {CAT_COLORS['BASE']};
+            }}
+            QLineEdit:focus {{ border: 1px solid {CAT_COLORS['BLUE']}; }}
+        """)
+        self.txt_search.textChanged.connect(self.on_gallery_search_changed)
+        
+        self.combo_filter_model = setup_combo_view(QComboBox())
+        self.combo_filter_model.setFixedWidth(200)
+        self.combo_filter_model.setMinimumHeight(35)
+        self.combo_filter_model.addItem("All Models")
+        self.combo_filter_model.currentIndexChanged.connect(self.on_gallery_search_changed)
+        
+        self.combo_sort = setup_combo_view(QComboBox())
+        self.combo_sort.setFixedWidth(150)
+        self.combo_sort.setMinimumHeight(35)
+        self.combo_sort.addItems(["Newest First", "Oldest First", "Steps (High-Low)"])
+        self.combo_sort.currentIndexChanged.connect(self.on_gallery_search_changed)
+        
+        btn_scan = QPushButton(" Rescan")
+        btn_scan.setIcon(qta.icon('fa5s.sync-alt', color=CAT_COLORS['TEXT']))
+        btn_scan.setFixedSize(90, 35)
+        btn_scan.clicked.connect(self.start_db_scan)
+
+        header_layout.addWidget(self.txt_search, 1)
+        header_layout.addWidget(self.combo_filter_model)
+        header_layout.addWidget(self.combo_sort)
+        header_layout.addWidget(btn_scan)
+        layout.addWidget(header_container)
+
+        # --- 2. BODY ---
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setHandleWidth(2)
+        
+        # LEFT GRID
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(0)
+        
+        self.gal_scroll = QScrollArea()
+        self.gal_scroll.setWidgetResizable(True)
+        self.gal_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        self.gal_scroll.setStyleSheet(f"background-color: {CAT_COLORS['BASE']};")
+        
         self.db_grid = QWidget()
         self.db_layout = QGridLayout(self.db_grid)
         self.db_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        gal_scroll.setWidget(self.db_grid)
-        gal_v_layout.addWidget(gal_scroll)
-        self.right_stack.addWidget(gal_view)
-
-        splitter.addWidget(sidebar)
-        splitter.addWidget(self.right_stack)
-        splitter.setSizes([450, 1150])
+        self.db_layout.setContentsMargins(15, 15, 15, 15)
+        self.db_layout.setSpacing(10)
+        self.gal_scroll.setWidget(self.db_grid)
+        left_layout.addWidget(self.gal_scroll)
         
-        self.side_tabs.currentChanged.connect(self.on_tab_changed)
+        # Pagination
+        pag_container = QWidget()
+        pag_container.setFixedHeight(50)
+        pag_container.setStyleSheet(f"background-color: {CAT_COLORS['MANTLE']}; border-top: 1px solid {CAT_COLORS['SURFACE0']};")
+        self.pag_layout = QHBoxLayout(pag_container)
+        self.pag_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        left_layout.addWidget(pag_container)
+        
+        # RIGHT DETAILS
+        right_widget = QWidget()
+        right_widget.setStyleSheet(f"background-color: {CAT_COLORS['MANTLE']}; border-left: 1px solid {CAT_COLORS['SURFACE0']};")
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(20, 20, 20, 20)
+        right_layout.setSpacing(15)
+        
+        right_layout.addWidget(QLabel("<h3>Image Details</h3>"))
+        
+        self.gal_detail_img = ClickableLabel("")
+        self.gal_detail_img.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.gal_detail_img.setMinimumHeight(300)
+        self.gal_detail_img.setStyleSheet(f"background-color: {CAT_COLORS['CRUST']}; border: 1px solid {CAT_COLORS['SURFACE0']}; border-radius: 8px;")
+        self.gal_detail_img.setText("Select an image...")
+        right_layout.addWidget(self.gal_detail_img)
+        
+        self.gal_detail_txt = QTextEdit()
+        self.gal_detail_txt.setReadOnly(True)
+        self.gal_detail_txt.setPlaceholderText("Metadata will appear here...")
+        right_layout.addWidget(self.gal_detail_txt)
+        
+        btn_use_params = QPushButton(" Use Parameters")
+        btn_use_params.setIcon(qta.icon('fa5s.magic', color=CAT_COLORS['TEXT']))
+        btn_use_params.clicked.connect(self.use_gallery_params)
+        
+        btn_use_img = QPushButton(" Use as Input (I2I)")
+        btn_use_img.setIcon(qta.icon('fa5s.image', color=CAT_COLORS['TEXT']))
+        btn_use_img.clicked.connect(self.use_gallery_image_i2i)
+        
+        right_layout.addWidget(btn_use_params)
+        right_layout.addWidget(btn_use_img)
+        right_layout.addStretch()
 
-    # --- Logic Methods ---
-    def on_tab_changed(self, index):
-        self.right_stack.setCurrentIndex(index)
-        if index == 3: self.refresh_gallery_view()
-        if index == 2: self.refresh_favorites_list()
+        splitter.addWidget(left_widget)
+        splitter.addWidget(right_widget)
+        splitter.setSizes([1100, 500])
+        
+        layout.addWidget(splitter)
+        self.stack.addWidget(page)
 
+    # --- LOGIC ---
     def sync_slider_spinbox(self, slider, spinbox, factor):
         is_float = isinstance(spinbox, QDoubleSpinBox)
-        if is_float: 
-            slider.valueChanged.connect(lambda v: spinbox.setValue(v / factor))
-        else: 
-            slider.valueChanged.connect(lambda v: spinbox.setValue(int(v / factor)))
+        if is_float: slider.valueChanged.connect(lambda v: spinbox.setValue(v / factor))
+        else: slider.valueChanged.connect(lambda v: spinbox.setValue(int(v / factor)))
         spinbox.valueChanged.connect(lambda v: slider.setValue(int(v * factor)))
 
     def start_db_scan(self):
@@ -363,43 +535,151 @@ class MainWindow(QMainWindow):
         self.scan_worker.finished.connect(self.scan_thread.quit)
         self.scan_thread.start()
 
+    def on_gallery_search_changed(self):
+        self.gallery_current_page = 0
+        self.refresh_gallery_view()
+
     def refresh_gallery_view(self):
         current_models = [self.combo_filter_model.itemText(i) for i in range(self.combo_filter_model.count())]
         for m in get_all_models():
-            if m not in current_models: 
-                self.combo_filter_model.addItem(m)
+            if m not in current_models: self.combo_filter_model.addItem(m)
         
+        self.gallery_results = get_filtered_images(
+            self.txt_search.text(), 
+            self.combo_sort.currentText(), 
+            "All" if self.combo_filter_model.currentText() == "All Models" else self.combo_filter_model.currentText()
+        )
+        self.render_gallery_page()
+
+    def render_gallery_page(self):
         for i in reversed(range(self.db_layout.count())): 
             w = self.db_layout.itemAt(i).widget()
             if w: w.setParent(None)
-            
-        rows = get_filtered_images(self.txt_search.text(), self.combo_sort.currentText(), self.combo_filter_model.currentText())
+
+        total_items = len(self.gallery_results)
+        start_idx = self.gallery_current_page * self.gallery_page_size
+        end_idx = start_idx + self.gallery_page_size
+        visible_items = self.gallery_results[start_idx:end_idx]
         
-        for i, row in enumerate(rows[:50]):
-            loader = ThumbnailLoader(row['path'], row['prompt'][:300])
+        for i, row in enumerate(visible_items):
+            # FIX: Hier 3 Argumente übergeben
+            loader = ThumbnailLoader(row['path'], row['prompt'][:300], dict(row))
             loader.signals.loaded.connect(self.add_thumbnail_to_grid)
             self.threadpool.start(loader)
+            
+        self.update_pagination_controls(total_items)
 
-    def add_thumbnail_to_grid(self, path, pixmap, tooltip):
+    def add_thumbnail_to_grid(self, path, pixmap, tooltip, row_data):
+        if self.db_layout.count() >= self.gallery_page_size: return
+
         count = self.db_layout.count()
         cols = 5
         lbl = ClickableLabel(path)
         lbl.setPixmap(pixmap)
-        lbl.setFixedSize(200, 200)
-        lbl.setStyleSheet(f"border: 1px solid {CAT_COLORS['SURFACE1']}; border-radius: 6px; background-color: {CAT_COLORS['MANTLE']};")
+        lbl.setFixedSize(200, 200) 
+        lbl.setScaledContents(True) 
+        lbl.setStyleSheet(f"""
+            QLabel {{ border: 1px solid {CAT_COLORS['SURFACE1']}; border-radius: 6px; background-color: {CAT_COLORS['MANTLE']}; }}
+            QLabel:hover {{ border: 2px solid {CAT_COLORS['BLUE']}; }}
+        """)
         lbl.setToolTip(tooltip)
-        lbl.double_clicked.connect(lambda p=path: self.set_input_image(p))
+        lbl.clicked.connect(lambda: self.show_gallery_details(row_data, pixmap))
+        lbl.double_clicked.connect(lambda: self.set_input_image(path))
         self.db_layout.addWidget(lbl, count // cols, count % cols)
+
+    def update_pagination_controls(self, total_items):
+        for i in reversed(range(self.pag_layout.count())): 
+            w = self.pag_layout.itemAt(i).widget()
+            if w: w.setParent(None)
+
+        total_pages = (total_items + self.gallery_page_size - 1) // self.gallery_page_size
+        if total_pages <= 1: return
+
+        btn_prev = QPushButton("<")
+        btn_prev.setFixedSize(30, 30)
+        btn_prev.setEnabled(self.gallery_current_page > 0)
+        btn_prev.clicked.connect(lambda: self.change_gallery_page(self.gallery_current_page - 1))
+        self.pag_layout.addWidget(btn_prev)
+
+        start_p = max(0, self.gallery_current_page - 4)
+        end_p = min(total_pages, start_p + 10)
+        for p in range(start_p, end_p):
+            btn = QPushButton(str(p + 1))
+            btn.setFixedSize(30, 30); btn.setCheckable(True)
+            btn.setChecked(p == self.gallery_current_page)
+            if p == self.gallery_current_page: btn.setStyleSheet(f"background-color: {CAT_COLORS['BLUE']}; color: {CAT_COLORS['BASE']}; border: none;")
+            else: btn.setStyleSheet("background-color: transparent;")
+            btn.clicked.connect(lambda _, page=p: self.change_gallery_page(page))
+            self.pag_layout.addWidget(btn)
+
+        btn_next = QPushButton(">")
+        btn_next.setFixedSize(30, 30)
+        btn_next.setEnabled(self.gallery_current_page < total_pages - 1)
+        btn_next.clicked.connect(lambda: self.change_gallery_page(self.gallery_current_page + 1))
+        self.pag_layout.addWidget(btn_next)
+        
+        lbl_info = QLabel(f" Page {self.gallery_current_page + 1} of {total_pages} ({total_items} items)")
+        lbl_info.setStyleSheet(f"color: {CAT_COLORS['SUBTEXT0']}; margin-left: 10px;")
+        self.pag_layout.addWidget(lbl_info)
+
+    def change_gallery_page(self, new_page):
+        self.gallery_current_page = new_page
+        self.render_gallery_page()
+        self.gal_scroll.verticalScrollBar().setValue(0)
+
+    def show_gallery_details(self, row, pixmap):
+        self.selected_gallery_item = row
+        w = self.gal_detail_img.width()
+        if not pixmap.isNull():
+            # Preview in Sidebar
+            self.gal_detail_img.setPixmap(pixmap.scaled(w, w, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        
+        # NEU: Klick öffnet den ImageViewerDialog statt os.startfile
+        # Wir trennen vorherige Verbindungen, um Mehrfach-Aufrufe zu verhindern
+        try: self.gal_detail_img.clicked.disconnect()
+        except: pass
+        
+        self.gal_detail_img.clicked.connect(lambda: self.open_fullscreen_viewer(row['path']))
+
+        meta = (
+            f"<b>Prompt:</b><br>{row['prompt']}<br><br>"
+            f"<b>Negative:</b><br>{row['negative_prompt']}<br><br>"
+            f"<b>Model:</b> {row['model']}<br>"
+            f"<b>Seed:</b> {row['seed']}<br>"
+            f"<b>Steps:</b> {row['steps']} | <b>CFG:</b> {row['cfg']}<br>"
+            f"<b>Date:</b> {row['timestamp']}"
+        )
+        self.gal_detail_txt.setHtml(meta)
+
+    # Hilfsmethode für den Viewer
+    def open_fullscreen_viewer(self, path):
+        viewer = ImageViewerDialog(path, self)
+        viewer.exec()
+
+    def use_gallery_params(self):
+        if not self.selected_gallery_item: return
+        row = self.selected_gallery_item
+        self.txt_prompt.setText(row['prompt'])
+        self.txt_neg.setText(row['negative_prompt'])
+        self.spin_steps.setValue(int(row['steps']))
+        self.spin_cfg.setValue(float(row['cfg']))
+        try:
+            seed = int(row['seed'])
+            self.txt_seed.setText(str(seed))
+        except: self.txt_seed.setText("")
+        self.btn_nav_gen.setChecked(True)
+        self.switch_view(0)
+        QMessageBox.information(self, "Loaded", "Parameters loaded from image!")
+
+    def use_gallery_image_i2i(self):
+        if self.selected_gallery_item:
+            self.set_input_image(self.selected_gallery_item['path'])
 
     def toggle_mode(self, mode):
         if mode == "T2I":
-            self.btn_mode_t2i.setChecked(True)
-            self.btn_mode_i2i.setChecked(False)
-            self.i2i_group.setVisible(False)
+            self.btn_mode_t2i.setChecked(True); self.btn_mode_i2i.setChecked(False); self.i2i_group.setVisible(False)
         else:
-            self.btn_mode_t2i.setChecked(False)
-            self.btn_mode_i2i.setChecked(True)
-            self.i2i_group.setVisible(True)
+            self.btn_mode_t2i.setChecked(False); self.btn_mode_i2i.setChecked(True); self.i2i_group.setVisible(True)
 
     def load_input_image_dialog(self):
         path, _ = QFileDialog.getOpenFileName(self, "Open Image", "", "Images (*.png *.jpg *.jpeg)")
@@ -410,26 +690,22 @@ class MainWindow(QMainWindow):
             self.input_img_pil = Image.open(path).convert("RGB")
             pixmap = QPixmap(path)
             self.lbl_input_preview.setPixmap(pixmap.scaled(self.lbl_input_preview.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            self.lbl_input_preview.setText("")
             self.toggle_mode("I2I")
-            self.side_tabs.setCurrentIndex(0) 
+            self.btn_nav_gen.setChecked(True)
+            self.switch_view(0)
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load image: {e}")
 
     def load_settings_from_config(self):
-        self.txt_neg.setText(self.config.neg_prompt)
-        self.spin_steps.setValue(self.config.steps)
-        self.spin_cfg.setValue(self.config.guidance)
-        self.chk_refiner.setChecked(self.config.use_refiner)
-        self.chk_pony.setChecked(self.config.pony_mode)
-        self.chk_freeu.setChecked(self.config.use_freeu)
-        
+        self.txt_neg.setText(self.config.neg_prompt); self.spin_steps.setValue(self.config.steps); self.spin_cfg.setValue(self.config.guidance)
+        self.chk_refiner.setChecked(self.config.use_refiner); self.chk_pony.setChecked(self.config.pony_mode); self.chk_freeu.setChecked(self.config.use_freeu)
         idx = self.combo_style.findText(self.config.current_style)
         if idx >= 0: self.combo_style.setCurrentIndex(idx)
 
     def refresh_favorites_list(self):
         self.list_favs.clear()
-        for fav in self.config.favourites:
-            self.list_favs.addItem(f"{fav['name']}")
+        for fav in self.config.favourites: self.list_favs.addItem(f"{fav['name']}")
 
     def on_favorite_selected(self, item):
         idx = self.list_favs.row(item)
@@ -439,69 +715,50 @@ class MainWindow(QMainWindow):
 
     def load_favorite_to_gen(self):
         self.txt_prompt.setText(self.fav_txt_prompt.toPlainText())
-        self.side_tabs.setCurrentIndex(0)
+        self.btn_nav_gen.setChecked(True); self.switch_view(0)
 
     def save_new_favorite(self):
         text, ok = QInputDialog.getText(self, "Save New", "Name:")
         if ok and text:
             self.config.favourites.append({"name": text, "prompt": self.fav_txt_prompt.toPlainText()})
-            self.config.save_favorites()
-            self.refresh_favorites_list()
+            self.config.save_favorites(); self.refresh_favorites_list()
 
     def update_favorite(self):
         row = self.list_favs.currentRow()
         if row >= 0:
             self.config.favourites[row]['prompt'] = self.fav_txt_prompt.toPlainText()
-            self.config.save_favorites()
-            QMessageBox.information(self, "Info", "Favorite updated!")
+            self.config.save_favorites(); QMessageBox.information(self, "Info", "Favorite updated!")
 
     def delete_favorite(self):
         row = self.list_favs.currentRow()
         if row >= 0:
             del self.config.favourites[row]
-            self.config.save_favorites()
-            self.refresh_favorites_list()
-            self.fav_txt_prompt.clear()
+            self.config.save_favorites(); self.refresh_favorites_list(); self.fav_txt_prompt.clear()
 
     def start_generation(self):
-        self.btn_generate.setEnabled(False)
-        self.progress_bar.setVisible(True)
-        self.progress_bar.setRange(0, 0)
+        self.btn_generate.setEnabled(False); self.btn_generate.setText(" GENERATING...")
+        self.progress_bar.setVisible(True); self.progress_bar.setRange(0, 0)
         
-        prompt_raw = self.txt_prompt.toPlainText()
-        neg_raw = self.txt_neg.toPlainText()
-        
+        prompt_raw = self.txt_prompt.toPlainText(); neg_raw = self.txt_neg.toPlainText()
         style_name = self.combo_style.currentText()
         if style_name in STYLES and style_name != "None":
-            prompt_final = STYLES[style_name]["pos"] + prompt_raw
-            neg_final = STYLES[style_name]["neg"] + neg_raw
-        else:
-            prompt_final, neg_final = prompt_raw, neg_raw
+            prompt_final = STYLES[style_name]["pos"] + prompt_raw; neg_final = STYLES[style_name]["neg"] + neg_raw
+        else: prompt_final, neg_final = prompt_raw, neg_raw
             
         if self.chk_pony.isChecked():
             prompt_final = self.config.pony_prefix + prompt_final
-            if "score_4" not in neg_final:
-                neg_final = self.config.pony_neg + neg_final
+            if "score_4" not in neg_final: neg_final = self.config.pony_neg + neg_final
                 
         seed_val = int(self.txt_seed.text().strip()) if self.txt_seed.text().strip().isdigit() else None
         lora_p = self.combo_lora.currentText() if self.combo_lora.currentText() != "None" else None
         
         params = {
-            "model_path": self.combo_model.currentText(),
-            "prompt": prompt_final,
-            "negative_prompt": neg_final,
-            "steps": self.spin_steps.value(),
-            "guidance_scale": self.spin_cfg.value(),
-            "seed": seed_val,
-            "use_refiner": self.chk_refiner.isChecked(),
-            "lora_path": lora_p,
-            "lora_scale": self.spin_lora.value(),
-            "strength": self.spin_strength.value(),
-            "freeu_args": {"s1":0.9, "s2":0.2, "b1":1.3, "b2":1.4} if self.chk_freeu.isChecked() else None
+            "model_path": self.combo_model.currentText(), "prompt": prompt_final, "negative_prompt": neg_final,
+            "steps": self.spin_steps.value(), "guidance_scale": self.spin_cfg.value(), "seed": seed_val,
+            "use_refiner": self.chk_refiner.isChecked(), "lora_path": lora_p, "lora_scale": self.spin_lora.value(),
+            "strength": self.spin_strength.value(), "freeu_args": {"s1":0.9, "s2":0.2, "b1":1.3, "b2":1.4} if self.chk_freeu.isChecked() else None
         }
-        
         mode = "T2I" if self.btn_mode_t2i.isChecked() else "I2I"
-        
         self.thread = QThread()
         self.worker = GeneratorWorker(self.engine, params, mode, self.input_img_pil)
         self.worker.moveToThread(self.thread)
@@ -514,33 +771,21 @@ class MainWindow(QMainWindow):
         self.thread.start()
 
     def on_generation_finished(self, path):
-        self.btn_generate.setEnabled(True)
+        self.btn_generate.setEnabled(True); self.btn_generate.setText(" GENERATE")
         self.progress_bar.setVisible(False)
-        
         pixmap = QPixmap(path)
-        w, h = self.lbl_main_preview.width(), self.lbl_main_preview.height()
-        self.lbl_main_preview.setPixmap(pixmap.scaled(w, h, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-        
-        self.add_to_history(path)
-        self.config.prompt = self.txt_prompt.toPlainText()
-        self.config.save_session_state()
-        self.start_db_scan()
+        if not pixmap.isNull():
+             self.lbl_main_preview.setPixmap(pixmap.scaled(self.lbl_main_preview.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        self.add_to_history(path); self.config.prompt = self.txt_prompt.toPlainText(); self.config.save_session_state(); self.start_db_scan()
 
     def on_generation_error(self, err):
-        self.btn_generate.setEnabled(True)
-        self.progress_bar.setVisible(False)
-        QMessageBox.critical(self, "Error", err)
+        self.btn_generate.setEnabled(True); self.btn_generate.setText(" GENERATE")
+        self.progress_bar.setVisible(False); QMessageBox.critical(self, "Error", err)
 
     def add_to_history(self, path):
-        row = len(self.history) // 4
-        col = len(self.history) % 4
-        
+        row = len(self.history) // 4; col = len(self.history) % 4
         lbl = ClickableLabel(path)
-        pix = QPixmap(path)
-        lbl.setPixmap(pix.scaled(150, 150, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
-        lbl.setFixedSize(150, 150)
-        lbl.setStyleSheet(f"border: 1px solid {CAT_COLORS['SURFACE1']}; border-radius: 4px;")
+        pix = QPixmap(path); lbl.setPixmap(pix.scaled(150, 150, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
+        lbl.setFixedSize(150, 150); lbl.setStyleSheet(f"border: 1px solid {CAT_COLORS['SURFACE1']}; border-radius: 4px;")
         lbl.double_clicked.connect(lambda: self.set_input_image(path))
-        
-        self.history_layout.addWidget(lbl, row, col)
-        self.history.append(path)
+        self.history_layout.addWidget(lbl, row, col); self.history.append(path)

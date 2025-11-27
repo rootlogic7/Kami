@@ -57,20 +57,22 @@ def get_filtered_images(search_text="", sort_by="Newest", model_filter="All"):
         query = "SELECT * FROM images WHERE 1=1"
         params = []
         
-        # 1. Search Filter (Prompt)
+        # 1. Search Filter (Mehrere Spalten)
         if search_text:
-            query += " AND prompt LIKE ?"
-            params.append(f"%{search_text}%")
+            # Wir suchen jetzt in Prompt, Seed UND Modell-Name
+            query += " AND (prompt LIKE ? OR seed LIKE ? OR model LIKE ?)"
+            term = f"%{search_text}%"
+            params.extend([term, term, term])
             
-        # 2. Model Filter
-        if model_filter and model_filter != "All":
+        # 2. Model Filter (Dropdown)
+        if model_filter and model_filter != "All Models" and model_filter != "All":
             query += " AND model LIKE ?"
             params.append(f"%{model_filter}%")
             
         # 3. Sorting
-        if sort_by == "Newest":
+        if sort_by == "Newest First" or sort_by == "Newest":
             query += " ORDER BY timestamp DESC"
-        elif sort_by == "Oldest":
+        elif sort_by == "Oldest First" or sort_by == "Oldest":
             query += " ORDER BY timestamp ASC"
         elif sort_by == "Steps (High-Low)":
             query += " ORDER BY steps DESC"
