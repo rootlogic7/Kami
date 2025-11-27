@@ -9,8 +9,8 @@ from PyQt6.QtWidgets import (
     QProgressBar, QMessageBox, QComboBox, QListWidget, QGroupBox,
     QMenu, QInputDialog, QLineEdit, QSpinBox, QDoubleSpinBox, QStackedWidget
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QObject, QThread, QSize
-from PyQt6.QtGui import QPixmap, QIcon, QAction
+from PyQt6.QtCore import Qt, pyqtSignal, QObject, QThread, QSize, QRunnable, QThreadPool
+from PyQt6.QtGui import QPixmap, QIcon, QAction, QImageReader
 from PIL import Image
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -61,17 +61,47 @@ class DBScannerWorker(QObject):
         count = scan_and_import_folder()
         self.finished.emit(count)
 
+# --- NEU: Asynchroner Thumbnail Loader ---
+class ThumbnailLoaderSignals(QObject):
+    loaded = pyqtSignal(str, QPixmap, str) # path, pixmap, tooltip
+
+class ThumbnailLoader(QRunnable):
+    def __init__(self, path, prompt, size=200):
+        super().__init__()
+        self.path = path
+        self.prompt = prompt
+        self.size = size
+        self.signals = ThumbnailLoaderSignals()
+
+    def run(self):
+        if not os.path.exists(self.path): return
+        
+        # High Performance Loading:
+        # Liest nur die nötigen Pixel für die Vorschaugröße, statt das volle Bild
+        reader = QImageReader(self.path)
+        
+        # Optimierung: Größe vor dem Laden setzen
+        orig_size = reader.size()
+        if orig_size.isValid():
+            reader.setScaledSize(orig_size.scaled(self.size, self.size, Qt.AspectRatioMode.KeepAspectRatio))
+            
+        img = reader.read()
+        if not img.isNull():
+            pix = QPixmap.fromImage(img)
+            self.signals.loaded.emit(self.path, pix, self.prompt)
+
 # --- Main Window ---
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("SDXL Local Station (Wayland Edition)")
+        self.setWindowTitle("Kami")
         self.resize(1600, 950)
         
         self.engine = T2IEngine()
         self.config = SessionConfig()
         self.history = []
         self.input_img_pil = None
+        self.threadpool = QThreadPool() # Pool für paralleles Laden
         
         os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
         os.makedirs(LORAS_DIR, exist_ok=True)
@@ -118,7 +148,6 @@ class MainWindow(QMainWindow):
         sidebar.setMinimumWidth(400); sidebar.setMaximumWidth(500)
         
         self.side_tabs = QTabWidget()
-        # FIX: Signal connection removed here, moved to end of function!
         
         # Tabs
         self.tab_gen = QWidget(); self.tab_models = QWidget(); self.tab_favs = QWidget(); self.tab_gallery = QWidget()
@@ -218,7 +247,7 @@ class MainWindow(QMainWindow):
         f_layout.addLayout(bf_layout)
         self.refresh_favorites_list()
 
-        # --- TAB 4: GALLERY FILTER (NEW) ---
+        # --- TAB 4: GALLERY FILTER ---
         gal_layout = QVBoxLayout(self.tab_gallery)
         gal_layout.addWidget(QLabel("Search Prompts"))
         self.txt_search = QLineEdit(); self.txt_search.textChanged.connect(self.refresh_gallery_view)
@@ -268,12 +297,11 @@ class MainWindow(QMainWindow):
         splitter.addWidget(sidebar); splitter.addWidget(self.right_stack)
         splitter.setSizes([450, 1150])
         
-        # FIX: Connect Signal AFTER everything is initialized
+        # Signals
         self.side_tabs.currentChanged.connect(self.on_tab_changed)
 
     # --- Logic ---
     def on_tab_changed(self, index):
-        # Switch Right Stack based on Tab
         if index == 3: # Gallery Tab
             self.right_stack.setCurrentIndex(1)
             self.refresh_gallery_view()
@@ -297,44 +325,58 @@ class MainWindow(QMainWindow):
         self.scan_thread.start()
 
     def refresh_gallery_view(self):
-        # Populate Model Filter
+        # Update Combo Filters
         current_models = [self.combo_filter_model.itemText(i) for i in range(self.combo_filter_model.count())]
         db_models = get_all_models()
         for m in db_models:
             if m not in current_models: self.combo_filter_model.addItem(m)
             
-        # Get Images
+        # 1. Clear Grid (wichtig: sofort, damit UI responsive wirkt)
+        for i in reversed(range(self.db_layout.count())): 
+            w = self.db_layout.itemAt(i).widget(); 
+            if w: w.setParent(None)
+            
+        # 2. Get Data from DB
         rows = get_filtered_images(
             search_text=self.txt_search.text(),
             sort_by=self.combo_sort.currentText(),
             model_filter=self.combo_filter_model.currentText()
         )
         
-        # Clear Grid
-        for i in reversed(range(self.db_layout.count())): 
-            w = self.db_layout.itemAt(i).widget(); 
-            if w: w.setParent(None)
-            
-        # Fill Grid (Limit 50 for perfo, implement pagination later if needed)
-        cols = 5
-        for i, row in enumerate(rows[:50]): 
+        # 3. Start Async Loading for each image
+        self.current_gal_rows = rows[:50] # Pagination limit
+        self.current_col_count = 0
+        
+        for i, row in enumerate(self.current_gal_rows):
             path = row['path']
-            if not os.path.exists(path): continue
+            prompt_snip = row['prompt'][:100]
             
-            lbl = ClickableLabel(path)
-            pix = QPixmap(path)
-            if not pix.isNull():
-                lbl.setPixmap(pix.scaled(200, 200, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
-                lbl.setFixedSize(200, 200)
-                lbl.setStyleSheet(f"border: 1px solid {CAT_SURFACE1}; border-radius: 4px;")
-                lbl.setToolTip(f"{row['prompt'][:100]}...")
-                lbl.double_clicked.connect(lambda p=path: self.set_input_image(p))
-                lbl.clicked.connect(lambda p=path: self.preview_image_gallery(p))
-                
-                self.db_layout.addWidget(lbl, i // cols, i % cols)
+            # Start Worker in Pool
+            loader = ThumbnailLoader(path, prompt_snip)
+            loader.signals.loaded.connect(self.add_thumbnail_to_grid)
+            self.threadpool.start(loader)
+
+    def add_thumbnail_to_grid(self, path, pixmap, tooltip):
+        # Find next empty slot logic simplistic: simple append wont work async perfectly ordered 
+        # but for gallery it is acceptable. 
+        # Better: use a layout that flows.
+        
+        count = self.db_layout.count()
+        cols = 5
+        row = count // cols
+        col = count % cols
+        
+        lbl = ClickableLabel(path)
+        lbl.setPixmap(pixmap)
+        lbl.setFixedSize(200, 200)
+        lbl.setStyleSheet(f"border: 1px solid {CAT_SURFACE1}; border-radius: 4px; background-color: {CAT_MANTLE};")
+        lbl.setToolTip(f"{tooltip}...")
+        lbl.double_clicked.connect(lambda p=path: self.set_input_image(p))
+        lbl.clicked.connect(lambda p=path: self.preview_image_gallery(p))
+        
+        self.db_layout.addWidget(lbl, row, col)
 
     def preview_image_gallery(self, path):
-        # Could show full size preview later
         pass 
 
     def toggle_mode(self, mode):
@@ -472,6 +514,15 @@ class ClickableLabel(QLabel):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    
+    # WICHTIG: Setzt die App-ID für Wayland/Hyprland
+    # Das muss exakt mit dem Namen der .desktop-Datei übereinstimmen (ohne .desktop)
+    app.setDesktopFileName("kami") 
+    app.setApplicationName("kami")
+    
+    # Optional: Ein Fenster-Icon setzen (falls du eine icon.png hast)
+    # app.setWindowIcon(QIcon("icon.png"))
+
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
