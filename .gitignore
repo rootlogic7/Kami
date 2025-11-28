@@ -49,6 +49,7 @@ models/loras/
 
 # Prompts
 favorites.json
+iotd_prompts.json
 
 # Configuration & Session
 session_config.json

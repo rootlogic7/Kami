@@ -1,4 +1,6 @@
 import os
+import json
+import random
 import sys
 import base64
 import glob
@@ -113,3 +115,32 @@ def get_file_list(directory: str, file_exts=('.safetensors', '.ckpt')) -> list:
              and not f.startswith('.')
              and f.lower().endswith(file_exts)]
     return sorted(files)
+
+IOTD_FILE = "iotd_prompts.json"
+
+def generate_random_prompt():
+    """Loads prompt snippets and combines them randomly."""
+    if not os.path.exists(IOTD_FILE):
+        return "A mysterious portrait, highly detailed, cinematic lighting" # Fallback
+
+    try:
+        with open(IOTD_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        prompt_parts = []
+        # Die Reihenfolge ist wichtig für einen guten Satzbau
+        order = ["sex", "age", "bodytype", "skintype", "hair", "face", "clothes", "pose", "environment"]
+        
+        for category in order:
+            if category in data and isinstance(data[category], list) and data[category]:
+                snippet = random.choice(data[category])
+                prompt_parts.append(snippet)
+        
+        # Basis-Stil hinzufügen, damit es gut aussieht
+        base_prompt = ", ".join(prompt_parts)
+        final_prompt = f"{base_prompt}, masterpiece, best quality, highly detailed, sharp focus, film grain"
+        return final_prompt
+
+    except Exception as e:
+        print(f"Error generating IOTD prompt: {e}")
+        return "Error generating random prompt"

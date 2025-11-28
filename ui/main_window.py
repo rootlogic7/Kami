@@ -15,7 +15,7 @@ from PyQt6.QtGui import QPixmap, QIcon
 
 from app.engine import T2IEngine
 from app.config import SessionConfig, STYLES
-from app.utils import get_file_list
+from app.utils import get_file_list, generate_random_prompt
 from app.style import get_stylesheet, CAT_COLORS
 # NEU: Import von delete_image_record
 from app.database import get_filtered_images, get_all_models, delete_image_record
@@ -95,6 +95,20 @@ class MainWindow(QMainWindow):
         nav_layout.addWidget(self.btn_nav_models)
         nav_layout.addWidget(self.btn_nav_favs)
         nav_layout.addWidget(self.btn_nav_gallery)
+
+        btn_iotd = QPushButton()
+        btn_iotd.setIcon(qta.icon('fa5s.dice', color=CAT_COLORS['LAVENDER']))
+        btn_iotd.setIconSize(QSize(22, 22))
+        btn_iotd.setToolTip("Generate 'Image of the Day' (Random)")
+        btn_iotd.setFixedSize(40, 40) # Quadratischer Button
+        btn_iotd.setStyleSheet(f"""
+            QPushButton {{ background-color: {CAT_COLORS['SURFACE0']}; border-radius: 20px; }}
+            QPushButton:hover {{ background-color: {CAT_COLORS['SURFACE1']}; }}
+        """)
+        btn_iotd.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_iotd.clicked.connect(self.start_iotd_workflow)
+        nav_layout.addWidget(btn_iotd)
+
         nav_layout.addStretch() 
 
         main_layout.addWidget(self.navbar)
@@ -803,3 +817,71 @@ class MainWindow(QMainWindow):
         lbl.setFixedSize(150, 150); lbl.setStyleSheet(f"border: 1px solid {CAT_COLORS['SURFACE1']}; border-radius: 4px;")
         lbl.double_clicked.connect(lambda: self.set_input_image(path))
         self.history_layout.addWidget(lbl, row, col); self.history.append(path)
+
+    # --- IOTD WORKFLOW ---
+    def start_iotd_workflow(self):
+        # 1. Prompt generieren
+        prompt = generate_random_prompt()
+        
+        # 2. User fragen (Bestätigung)
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Image of the Day")
+        msg.setText("Generate a random image with this prompt?")
+        msg.setInformativeText(prompt)
+        msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        msg.setDefaultButton(QMessageBox.StandardButton.Yes)
+        # Styling für die Messagebox (optional, damit es zum Theme passt)
+        msg.setStyleSheet(f"background-color: {CAT_COLORS['MANTLE']}; color: {CAT_COLORS['TEXT']};")
+        
+        ret = msg.exec()
+        
+        if ret == QMessageBox.StandardButton.Yes:
+            # 3. Generierung starten
+            self.btn_generate.setEnabled(False) # Hauptbutton sperren
+            self.progress_bar.setVisible(True)
+            self.progress_bar.setRange(0, 0)
+            
+            # Gute Standard-Parameter für SDXL
+            params = {
+                "model_path": self.config.model_path, # Nutzt das zuletzt eingestellte Modell
+                "prompt": prompt,
+                "negative_prompt": "ugly, deformed, noisy, blurry, low contrast, text, watermark",
+                "steps": 40, # Etwas mehr Qualität
+                "guidance_scale": 7.5,
+                "seed": None, # Zufall
+                "use_refiner": self.config.use_refiner,
+                "lora_path": None,
+                "lora_scale": 0.8,
+                "strength": 1.0,
+                "freeu_args": None
+            }
+            
+            self.thread = QThread()
+            self.worker = GeneratorWorker(self.engine, params, "T2I", None)
+            self.worker.moveToThread(self.thread)
+            self.thread.started.connect(self.worker.run)
+            
+            # WICHTIG: Wir verbinden es mit einer SPEZIELLEN on_finished Methode
+            self.worker.finished.connect(self.on_iotd_finished)
+            
+            self.worker.error.connect(self.on_generation_error) # Standard Error Handler nutzen
+            self.worker.finished.connect(self.thread.quit)
+            self.worker.finished.connect(self.worker.deleteLater)
+            self.thread.finished.connect(self.thread.deleteLater)
+            self.thread.start()
+
+    def on_iotd_finished(self, path):
+        # UI zurücksetzen
+        self.btn_generate.setEnabled(True)
+        self.progress_bar.setVisible(False)
+        
+        # In DB und History aufnehmen (wie bei normaler Generierung)
+        self.add_to_history(path)
+        self.start_db_scan()
+        
+        # SPEZIAL-EFFEKT: Direkt im großen Viewer öffnen
+        # Wir nutzen den neuen ImageViewerDialog, den wir vorhin erstellt haben
+        viewer = ImageViewerDialog(path, self)
+        viewer.delete_confirmed.connect(self.handle_viewer_delete) # Löschen erlauben
+        viewer.setWindowTitle("Image of the Day - Result")
+        viewer.exec()
