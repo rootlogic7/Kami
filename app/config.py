@@ -75,10 +75,13 @@ class SessionConfig:
                         if isinstance(item, str):
                             migrated.append({
                                 "name": item[:25].strip() + "...", 
-                                "prompt": item
+                                "prompt": item,
+                                "negative_prompt": "" # Sicherstellen, dass der Schlüssel existiert
                             })
                         elif isinstance(item, dict) and "prompt" in item:
                             if "name" not in item: item["name"] = "Untitled"
+                            # Sicherstellen, dass negative_prompt existiert
+                            if "negative_prompt" not in item: item["negative_prompt"] = ""
                             migrated.append(item)
                     return migrated
             except json.JSONDecodeError:

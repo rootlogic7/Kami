@@ -82,6 +82,7 @@ class T2IEngine:
             self.base_pipeline.has_lora = True
 
     def load_refiner_model(self):
+        # Wir behalten den Img2Img-Import, da der Refiner im T2I-Prozess Latents raffiniert (also I2I).
         if self.refiner_pipeline: return
         logger.info("Loading Refiner...")
         vae = self._load_vae()
@@ -98,14 +99,14 @@ class T2IEngine:
         sanitized = re.sub(r'[^a-zA-Z0-9]+', '_', clean).strip('_').lower()
         return sanitized[:max_len].rstrip('_') if sanitized else "image"
 
-    def _create_output_path(self, prompt, use_refiner, lora_path=None, is_i2i=False):
+    # is_i2i-Parameter entfernt
+    def _create_output_path(self, prompt, use_refiner, lora_path=None):
         name = self._sanitize_prompt(prompt)
         now = datetime.now()
         date_str = now.strftime("%Y%m%d")
         time_str = now.strftime("%H%M%S")
         
         suffix = ""
-        if is_i2i: suffix += "_i2i"
         if lora_path: suffix += "_lora"
         if use_refiner: suffix += "_refiner"
         
@@ -114,12 +115,13 @@ class T2IEngine:
         os.makedirs(output_dir, exist_ok=True)
         return os.path.join(output_dir, filename)
 
-    def _save_image(self, image, output_path, prompt, negative_prompt, steps, guidance_scale, seed_value, freeu_args, lora_path, mode_info):
+    # mode_info-Parameter entfernt
+    def _save_image(self, image, output_path, prompt, negative_prompt, steps, guidance_scale, seed_value, freeu_args, lora_path):
         metadata = PngInfo()
         parameters_txt = (
             f"{prompt}\nNegative prompt: {negative_prompt}\n"
             f"Steps: {steps}, CFG scale: {guidance_scale}, Seed: {seed_value}, "
-            f"Mode: {mode_info}, Model: {os.path.basename(self.base_model_id)}, "
+            f"Mode: T2I, Model: {os.path.basename(self.base_model_id)}, "
             f"Scheduler: DPM++ 2M Karras, FreeU: {bool(freeu_args)}, "
             f"LoRA: {os.path.basename(lora_path) if lora_path else 'None'}"
         )
@@ -141,7 +143,8 @@ class T2IEngine:
 
     def generate(self, prompt, negative_prompt="", steps=30, guidance_scale=7.5, seed=None, 
                  use_refiner=False, lora_path=None, lora_scale=1.0, freeu_args=None):
-        output_path = self._create_output_path(prompt, use_refiner, lora_path, False)
+        # _create_output_path Aufruf angepasst
+        output_path = self._create_output_path(prompt, use_refiner, lora_path)
         self.load_base_model(lora_path) 
         if use_refiner: self.load_refiner_model()
 
@@ -187,12 +190,14 @@ class T2IEngine:
                         denoising_end=0.8, output_type="latent", cross_attention_kwargs=kwargs
                     ).images
                     gc.collect(); torch.cuda.empty_cache()
+                    # Refiner-Nutzung
                     image = self.refiner_pipeline(
                         prompt=prompt, negative_prompt=negative_prompt, num_inference_steps=steps, 
                         guidance_scale=guidance_scale, generator=generator, denoising_start=0.8, image=latents
                     ).images[0]
 
-                self._save_image(image, output_path, prompt, negative_prompt, steps, guidance_scale, seed_value, freeu_args, lora_path, "T2I")
+                # _save_image Aufruf angepasst
+                self._save_image(image, output_path, prompt, negative_prompt, steps, guidance_scale, seed_value, freeu_args, lora_path)
             
         except Exception as e:
             logger.error(f"Generation Error: {e}"); raise
@@ -200,69 +205,7 @@ class T2IEngine:
             gc.collect(); torch.cuda.empty_cache()
         return output_path
 
-    def generate_i2i(self, prompt, input_image, strength=0.75, negative_prompt="", steps=30, guidance_scale=7.5, seed=None,
-                     use_refiner=False, lora_path=None, lora_scale=1.0, freeu_args=None):
-        output_path = self._create_output_path(prompt, use_refiner, lora_path, True)
-        self.load_base_model(lora_path)
-        if use_refiner: self.load_refiner_model()
-
-        if freeu_args:
-            self.base_pipeline.enable_freeu(s1=freeu_args['s1'], s2=freeu_args['s2'], b1=freeu_args['b1'], b2=freeu_args['b2'])
-        else:
-            self.base_pipeline.disable_freeu()
-
-        generator = torch.Generator("cpu").manual_seed(seed) if seed is not None else None
-        seed_value = str(seed) if seed is not None else "Random"
-
-        logger.info(f"Generating I2I: {prompt[:50]}...")
-        
-        try:
-            with torch.no_grad():
-                self.base_pipeline.text_encoder.to(self.device)
-                self.base_pipeline.text_encoder_2.to(self.device)
-                
-                compel = CompelForSDXL(self.base_pipeline)
-                if hasattr(compel, 'conditioning_provider'):
-                    compel.conditioning_provider.device = self.device
-                
-                cond = compel(prompt, negative_prompt=negative_prompt)
-                
-                self.base_pipeline.text_encoder.to("cpu")
-                self.base_pipeline.text_encoder_2.to("cpu")
-                del compel; gc.collect(); torch.cuda.empty_cache()
-
-                kwargs = {"scale": lora_scale} if self.base_pipeline.has_lora else None
-                i2i_pipe = StableDiffusionXLImg2ImgPipeline(**self.base_pipeline.components)
-
-                if not use_refiner:
-                    image = i2i_pipe(
-                        image=input_image, strength=strength,
-                        prompt_embeds=cond.embeds, pooled_prompt_embeds=cond.pooled_embeds,
-                        negative_prompt_embeds=cond.negative_embeds, negative_pooled_prompt_embeds=cond.negative_pooled_embeds,
-                        num_inference_steps=steps, guidance_scale=guidance_scale, generator=generator, cross_attention_kwargs=kwargs
-                    ).images[0]
-                else:
-                    latents = i2i_pipe(
-                        image=input_image, strength=strength,
-                        prompt_embeds=cond.embeds, pooled_prompt_embeds=cond.pooled_embeds,
-                        negative_prompt_embeds=cond.negative_embeds, negative_pooled_prompt_embeds=cond.negative_pooled_embeds,
-                        num_inference_steps=steps, guidance_scale=guidance_scale, generator=generator,
-                        denoising_end=0.8, output_type="latent", cross_attention_kwargs=kwargs
-                    ).images
-                    gc.collect(); torch.cuda.empty_cache()
-                    image = self.refiner_pipeline(
-                        prompt=prompt, negative_prompt=negative_prompt, num_inference_steps=steps, 
-                        guidance_scale=guidance_scale, generator=generator, denoising_start=0.8, image=latents
-                    ).images[0]
-                
-                del i2i_pipe
-                self._save_image(image, output_path, prompt, negative_prompt, steps, guidance_scale, seed_value, freeu_args, lora_path, f"I2I (Str:{strength})")
-            
-        except Exception as e:
-            logger.error(f"I2I Error: {e}"); raise
-        finally:
-            gc.collect(); torch.cuda.empty_cache()
-        return output_path
+    # generate_i2i Methode entfernt
 
     def cleanup(self):
         self.base_pipeline = None; self.refiner_pipeline = None; self.vae = None

@@ -35,7 +35,7 @@ class MainWindow(QMainWindow):
         self.engine = T2IEngine()
         self.config = SessionConfig()
         self.history = []
-        self.input_img_pil = None
+        # self.input_img_pil = None # Entfernt
         self.threadpool = QThreadPool()
         
         self.gallery_results = []       
@@ -152,46 +152,11 @@ class MainWindow(QMainWindow):
         scroll_content = QWidget()
         sc_layout = QVBoxLayout(scroll_content)
         
-        mode_layout = QHBoxLayout()
-        self.btn_mode_t2i = QPushButton(" Text to Image")
-        self.btn_mode_t2i.setIcon(qta.icon('fa5s.pen'))
-        self.btn_mode_t2i.setObjectName("ModeBtn")
-        self.btn_mode_t2i.setCheckable(True)
-        self.btn_mode_t2i.setChecked(True)
-        self.btn_mode_t2i.clicked.connect(lambda: self.toggle_mode("T2I"))
-        self.btn_mode_i2i = QPushButton(" Image to Image")
-        self.btn_mode_i2i.setIcon(qta.icon('fa5s.image'))
-        self.btn_mode_i2i.setObjectName("ModeBtn")
-        self.btn_mode_i2i.setCheckable(True)
-        self.btn_mode_i2i.clicked.connect(lambda: self.toggle_mode("I2I"))
-        mode_layout.addWidget(self.btn_mode_t2i)
-        mode_layout.addWidget(self.btn_mode_i2i)
-        sc_layout.addLayout(mode_layout)
+        # Modus-Auswahl entfernt
+        sc_layout.addWidget(QLabel("<h3>Text-to-Image Mode</h3>"))
 
-        self.i2i_group = QGroupBox("Input Image")
-        i2i_layout = QVBoxLayout(self.i2i_group)
-        self.lbl_input_preview = QLabel("Drop or Load Image")
-        self.lbl_input_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_input_preview.setStyleSheet(f"border: 2px dashed {CAT_COLORS['SURFACE1']}; min-height: 120px; color: {CAT_COLORS['SUBTEXT0']};")
-        i2i_layout.addWidget(self.lbl_input_preview)
-        btn_load = QPushButton(" Load Input")
-        btn_load.setIcon(qta.icon('fa5s.folder-open', color=CAT_COLORS['TEXT']))
-        btn_load.clicked.connect(self.load_input_image_dialog)
-        i2i_layout.addWidget(btn_load)
-        i2i_layout.addWidget(QLabel("Denoising Strength"))
-        s_layout = QHBoxLayout()
-        self.slider_strength = QSlider(Qt.Orientation.Horizontal)
-        self.slider_strength.setRange(0, 100)
-        self.spin_strength = QDoubleSpinBox()
-        self.spin_strength.setRange(0.0, 1.0)
-        self.spin_strength.setSingleStep(0.05)
-        self.spin_strength.setValue(0.75)
-        self.sync_slider_spinbox(self.slider_strength, self.spin_strength, 100.0)
-        s_layout.addWidget(self.slider_strength)
-        s_layout.addWidget(self.spin_strength)
-        i2i_layout.addLayout(s_layout)
-        sc_layout.addWidget(self.i2i_group)
-        self.i2i_group.setVisible(False)
+        # I2I-Gruppe entfernt
+        # self.i2i_group.setVisible(False) entfernt
 
         sc_layout.addWidget(QLabel("Positive Prompt"))
         self.txt_prompt = QTextEdit()
@@ -494,9 +459,10 @@ class MainWindow(QMainWindow):
         btn_use_params.setIcon(qta.icon('fa5s.magic', color=CAT_COLORS['TEXT']))
         btn_use_params.clicked.connect(self.use_gallery_params)
         
-        btn_use_img = QPushButton(" Use as Input (I2I)")
-        btn_use_img.setIcon(qta.icon('fa5s.image', color=CAT_COLORS['TEXT']))
-        btn_use_img.clicked.connect(self.use_gallery_image_i2i)
+        # Button "Use as Input (I2I)" entfernt
+        # btn_use_img = QPushButton(" Use as Input (I2I)")
+        # btn_use_img.setIcon(qta.icon('fa5s.image', color=CAT_COLORS['TEXT']))
+        # btn_use_img.clicked.connect(self.use_gallery_image_i2i) # entfernt
         
         # NEU: Delete Button im rechten Panel
         btn_del_img = QPushButton(" Delete Image")
@@ -505,7 +471,7 @@ class MainWindow(QMainWindow):
         btn_del_img.clicked.connect(self.delete_gallery_image)
         
         right_layout.addWidget(btn_use_params)
-        right_layout.addWidget(btn_use_img)
+        # right_layout.addWidget(btn_use_img) # entfernt
         right_layout.addWidget(btn_del_img)
         right_layout.addStretch()
 
@@ -581,7 +547,7 @@ class MainWindow(QMainWindow):
         """)
         lbl.setToolTip(tooltip)
         lbl.clicked.connect(lambda: self.show_gallery_details(row_data, pixmap))
-        lbl.double_clicked.connect(lambda: self.set_input_image(path))
+        # lbl.double_clicked.connect(lambda: self.set_input_image(path)) # entfernt
         self.db_layout.addWidget(lbl, count // cols, count % cols)
 
     def update_pagination_controls(self, total_items):
@@ -699,69 +665,62 @@ class MainWindow(QMainWindow):
         self.switch_view(0)
         QMessageBox.information(self, "Loaded", "Parameters loaded from image!")
 
-    def use_gallery_image_i2i(self):
-        if self.selected_gallery_item:
-            self.set_input_image(self.selected_gallery_item['path'])
+    # use_gallery_image_i2i entfernt
+    # toggle_mode entfernt
+    # load_input_image_dialog entfernt
+    # set_input_image entfernt
 
-    def toggle_mode(self, mode):
-        if mode == "T2I":
-            self.btn_mode_t2i.setChecked(True); self.btn_mode_i2i.setChecked(False); self.i2i_group.setVisible(False)
-        else:
-            self.btn_mode_t2i.setChecked(False); self.btn_mode_i2i.setChecked(True); self.i2i_group.setVisible(True)
-
-    def load_input_image_dialog(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Open Image", "", "Images (*.png *.jpg *.jpeg)")
-        if path: self.set_input_image(path)
-
-    def set_input_image(self, path):
-        try:
-            self.input_img_pil = Image.open(path).convert("RGB")
-            pixmap = QPixmap(path)
-            self.lbl_input_preview.setPixmap(pixmap.scaled(self.lbl_input_preview.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-            self.lbl_input_preview.setText("")
-            self.toggle_mode("I2I")
-            self.btn_nav_gen.setChecked(True)
-            self.switch_view(0)
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to load image: {e}")
-
+    # RESTORED: Load settings (essential for startup)
     def load_settings_from_config(self):
         self.txt_neg.setText(self.config.neg_prompt); self.spin_steps.setValue(self.config.steps); self.spin_cfg.setValue(self.config.guidance)
         self.chk_refiner.setChecked(self.config.use_refiner); self.chk_pony.setChecked(self.config.pony_mode); self.chk_freeu.setChecked(self.config.use_freeu)
         idx = self.combo_style.findText(self.config.current_style)
         if idx >= 0: self.combo_style.setCurrentIndex(idx)
 
+    # RESTORED: Refresh favorites list
     def refresh_favorites_list(self):
         self.list_favs.clear()
         for fav in self.config.favourites: self.list_favs.addItem(f"{fav['name']}")
 
+    # RESTORED: On favorite selected (CRASH FIX) - Logic improved to handle negative prompt
     def on_favorite_selected(self, item):
         idx = self.list_favs.row(item)
         if 0 <= idx < len(self.config.favourites):
             fav = self.config.favourites[idx]
-            self.fav_txt_prompt.setText(fav['prompt'])
+            self.fav_txt_prompt.setText(fav.get('prompt', ''))
+            self.fav_txt_neg.setText(fav.get('negative_prompt', ''))
 
+    # RESTORED: Load favorite to generate - Logic improved to load negative prompt
     def load_favorite_to_gen(self):
         self.txt_prompt.setText(self.fav_txt_prompt.toPlainText())
+        self.txt_neg.setText(self.fav_txt_neg.toPlainText()) # Lade Neg. Prompt
         self.btn_nav_gen.setChecked(True); self.switch_view(0)
 
+    # RESTORED: Save new favorite - Logic improved to save negative prompt
     def save_new_favorite(self):
         text, ok = QInputDialog.getText(self, "Save New", "Name:")
         if ok and text:
-            self.config.favourites.append({"name": text, "prompt": self.fav_txt_prompt.toPlainText()})
+            self.config.favourites.append({
+                "name": text, 
+                "prompt": self.fav_txt_prompt.toPlainText(),
+                "negative_prompt": self.fav_txt_neg.toPlainText() # Speichere Neg. Prompt
+            })
             self.config.save_favorites(); self.refresh_favorites_list()
 
+    # RESTORED: Update favorite - Logic improved to update negative prompt
     def update_favorite(self):
         row = self.list_favs.currentRow()
         if row >= 0:
             self.config.favourites[row]['prompt'] = self.fav_txt_prompt.toPlainText()
+            self.config.favourites[row]['negative_prompt'] = self.fav_txt_neg.toPlainText() # Update Neg. Prompt
             self.config.save_favorites(); QMessageBox.information(self, "Info", "Favorite updated!")
 
+    # RESTORED: Delete favorite - Logic improved to clear text fields
     def delete_favorite(self):
         row = self.list_favs.currentRow()
         if row >= 0:
             del self.config.favourites[row]
-            self.config.save_favorites(); self.refresh_favorites_list(); self.fav_txt_prompt.clear()
+            self.config.save_favorites(); self.refresh_favorites_list(); self.fav_txt_prompt.clear(); self.fav_txt_neg.clear()
 
     def start_generation(self):
         self.btn_generate.setEnabled(False); self.btn_generate.setText(" GENERATING...")
@@ -775,7 +734,7 @@ class MainWindow(QMainWindow):
             
         if self.chk_pony.isChecked():
             prompt_final = self.config.pony_prefix + prompt_final
-            if "score_4" not in neg_final: neg_final = self.config.pony_neg + neg_final
+            if "score_4" not in neg_final: neg_final = self.config.pony_neg + neg_raw
                 
         seed_val = int(self.txt_seed.text().strip()) if self.txt_seed.text().strip().isdigit() else None
         lora_p = self.combo_lora.currentText() if self.combo_lora.currentText() != "None" else None
@@ -784,11 +743,12 @@ class MainWindow(QMainWindow):
             "model_path": self.combo_model.currentText(), "prompt": prompt_final, "negative_prompt": neg_final,
             "steps": self.spin_steps.value(), "guidance_scale": self.spin_cfg.value(), "seed": seed_val,
             "use_refiner": self.chk_refiner.isChecked(), "lora_path": lora_p, "lora_scale": self.spin_lora.value(),
-            "strength": self.spin_strength.value(), "freeu_args": {"s1":0.9, "s2":0.2, "b1":1.3, "b2":1.4} if self.chk_freeu.isChecked() else None
+            # strength entfernt
+            "freeu_args": {"s1":0.9, "s2":0.2, "b1":1.3, "b2":1.4} if self.chk_freeu.isChecked() else None
         }
-        mode = "T2I" if self.btn_mode_t2i.isChecked() else "I2I"
+        # mode und input_img_pil entfernt
         self.thread = QThread()
-        self.worker = GeneratorWorker(self.engine, params, mode, self.input_img_pil)
+        self.worker = GeneratorWorker(self.engine, params)
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.finished.connect(self.on_generation_finished)
@@ -815,7 +775,7 @@ class MainWindow(QMainWindow):
         lbl = ClickableLabel(path)
         pix = QPixmap(path); lbl.setPixmap(pix.scaled(150, 150, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
         lbl.setFixedSize(150, 150); lbl.setStyleSheet(f"border: 1px solid {CAT_COLORS['SURFACE1']}; border-radius: 4px;")
-        lbl.double_clicked.connect(lambda: self.set_input_image(path))
+        # lbl.double_clicked.connect(lambda: self.set_input_image(path)) # entfernt
         self.history_layout.addWidget(lbl, row, col); self.history.append(path)
 
     # --- IOTD WORKFLOW ---
@@ -852,12 +812,12 @@ class MainWindow(QMainWindow):
                 "use_refiner": self.config.use_refiner,
                 "lora_path": None,
                 "lora_scale": 0.8,
-                "strength": 1.0,
+                # strength entfernt
                 "freeu_args": None
             }
             
             self.thread = QThread()
-            self.worker = GeneratorWorker(self.engine, params, "T2I", None)
+            self.worker = GeneratorWorker(self.engine, params) # ohne mode und input_image
             self.worker.moveToThread(self.thread)
             self.thread.started.connect(self.worker.run)
             

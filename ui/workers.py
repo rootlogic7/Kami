@@ -7,12 +7,11 @@ class GeneratorWorker(QObject):
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, engine, params, mode="T2I", input_image=None):
+    # mode und input_image entfernt
+    def __init__(self, engine, params):
         super().__init__()
         self.engine = engine
         self.params = params
-        self.mode = mode
-        self.input_image = input_image
 
     def run(self):
         try:
@@ -21,15 +20,11 @@ class GeneratorWorker(QObject):
                 self.engine.base_model_id = self.params.get("model_path")
                 self.engine.base_pipeline = None 
             
+            # strength entfernt, da es nur für I2I relevant war
             gen_args = {k: v for k, v in self.params.items() if k not in ["model_path", "strength"]}
             
-            if self.mode == "T2I":
-                path = self.engine.generate(**gen_args)
-            else:
-                if not self.input_image:
-                    raise ValueError("No input image provided for I2I")
-                gen_args["strength"] = self.params["strength"]
-                path = self.engine.generate_i2i(input_image=self.input_image, **gen_args)
+            # Nur T2I-Generierung
+            path = self.engine.generate(**gen_args)
             
             self.finished.emit(path)
         except Exception as e:

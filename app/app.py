@@ -4,7 +4,7 @@ from PIL import Image
 from engine import T2IEngine
 
 # --- Page Config ---
-st.set_page_config(page_title="Local SDXL T2I/I2I", layout="wide")
+st.set_page_config(page_title="Local SDXL T2I", layout="wide")
 
 # --- Session State Initialization ---
 # Wir nutzen den Session State, um Daten über App-Reruns hinweg zu speichern.
@@ -16,9 +16,7 @@ if 'history' not in st.session_state:
     # Liste für die Pfade der generierten Bilder
     st.session_state.history = []
 
-if 'selected_input_image_path' not in st.session_state:
-    # Pfad für ein Bild, das aus der Galerie als Input gewählt wurde
-    st.session_state.selected_input_image_path = None
+# st.session_state.selected_input_image_path entfernt
 
 # Shortcut für die Engine Instanz
 engine = st.session_state.engine
@@ -32,46 +30,16 @@ def load_image_from_path(path):
         st.error(f"Error loading image from path {path}: {e}")
         return None
 
-def set_input_image(path):
-    """Callback-Funktion für die Galerie-Buttons."""
-    st.session_state.selected_input_image_path = path
-    st.success(f"Set image as input for next generation!")
+# set_input_image entfernt
 
 # --- Sidebar UI ---
 with st.sidebar:
     st.title("Configuration")
     
-    # Modus-Auswahl
-    mode = st.radio("Generation Mode", ["Text-to-Image (T2I)", "Image-to-Image (I2I)"])
-    is_i2i_mode = mode == "Image-to-Image (I2I)"
-
-    input_image = None
-    strength = 0.75
-
-    # I2I spezifische Optionen
-    if is_i2i_mode:
-        st.header("I2I Settings")
-        # Priorität: Zuerst prüfen, ob ein Bild aus der Galerie gewählt wurde
-        if st.session_state.selected_input_image_path:
-            st.info("Using selected image from history as input.")
-            # Kleines Thumbnail anzeigen
-            thumb = load_image_from_path(st.session_state.selected_input_image_path)
-            if thumb:
-                st.image(thumb, caption="Selected Input", width=150)
-            input_image = thumb
-            if st.button("Clear Selection"):
-                st.session_state.selected_input_image_path = None
-                st.experimental_rerun()
-        else:
-            # Fallback: Datei-Upload
-            uploaded_file = st.file_uploader("Upload Input Image", type=["png", "jpg", "jpeg"])
-            if uploaded_file is not None:
-                input_image = Image.open(uploaded_file).convert("RGB")
-                st.image(input_image, caption="Uploaded Input", width=150)
-
-        # Stärke-Regler (nur für I2I relevant)
-        strength = st.slider("Strength (Denoising)", min_value=0.0, max_value=1.0, value=0.75, step=0.01, 
-                             help="How much to transform the input image. 0.0 = no change, 1.0 = complete change.")
+    # Modus-Auswahl entfernt
+    
+    # I2I spezifische Optionen entfernt
+    # input_image, strength entfernt
 
     # Gemeinsame Parameter
     st.header("Prompt Parameters")
@@ -111,7 +79,7 @@ with st.sidebar:
         st.success("Models unloaded!")
 
 # --- Main Content Area ---
-st.title("SDXL Local Generation Station")
+st.title("SDXL Local Generation Station (Text-to-Image)")
 
 generate_button = st.button("Generate Image", type="primary")
 
@@ -119,38 +87,22 @@ if generate_button:
     # Validierung
     if not prompt:
         st.error("Please enter a positive prompt.")
-    elif is_i2i_mode and input_image is None:
-        st.error("Please upload an input image or select one from history for Img2Img mode.")
+    # I2I-Validierung entfernt
     else:
         with st.spinner("Generating... Please wait. Check terminal for progress."):
             try:
-                # Entscheidung welche Generierungsmethode aufgerufen wird
-                if is_i2i_mode:
-                    output_path = engine.generate_i2i(
-                        prompt=prompt,
-                        input_image=input_image,
-                        strength=strength,
-                        negative_prompt=negative_prompt,
-                        steps=steps,
-                        guidance_scale=guidance_scale,
-                        seed=seed,
-                        use_refiner=use_refiner,
-                        lora_path=lora_path if lora_path else None,
-                        lora_scale=lora_scale,
-                        freeu_args=freeu_args
-                    )
-                else:
-                    output_path = engine.generate(
-                        prompt=prompt,
-                        negative_prompt=negative_prompt,
-                        steps=steps,
-                        guidance_scale=guidance_scale,
-                        seed=seed,
-                        use_refiner=use_refiner,
-                        lora_path=lora_path if lora_path else None,
-                        lora_scale=lora_scale,
-                        freeu_args=freeu_args
-                    )
+                # Nur T2I-Aufruf
+                output_path = engine.generate(
+                    prompt=prompt,
+                    negative_prompt=negative_prompt,
+                    steps=steps,
+                    guidance_scale=guidance_scale,
+                    seed=seed,
+                    use_refiner=use_refiner,
+                    lora_path=lora_path if lora_path else None,
+                    lora_scale=lora_scale,
+                    freeu_args=freeu_args
+                )
                 
                 # Erfolgreiche Generierung anzeigen
                 st.success(f"Image generated! Saved to: {output_path}")
@@ -167,7 +119,7 @@ if generate_button:
 if st.session_state.history:
     st.markdown("---")
     st.subheader("History & Gallery")
-    st.caption("Click 'Use as Input' to use a generated image for the next Img2Img generation.")
+    # I2I-Hinweis entfernt
     
     # Grid-Layout erstellen
     cols_per_row = 4
@@ -183,10 +135,4 @@ if st.session_state.history:
                 img = load_image_from_path(img_path)
                 if img:
                     st.image(img, use_column_width=True)
-                    # Button mit Callback-Funktion
-                    # WICHTIG: Der key muss eindeutig sein!
-                    st.button("Use as Input", 
-                              key=f"btn_use_{i}_{j}", 
-                              on_click=set_input_image, 
-                              args=(img_path,),
-                              help="Set this image as input for Img2Img mode.")
+                    # Button "Use as Input" entfernt
