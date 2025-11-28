@@ -1,5 +1,9 @@
 # app/style.py
 
+# --- KONFIGURATION ---
+APP_FONT = "DepartureMono Nerd Font Propo" 
+
+# --- CATPPUCCIN MOCHA PALETTE ---
 CAT_BASE = "#1e1e2e"
 CAT_MANTLE = "#181825"
 CAT_CRUST = "#11111b"
@@ -7,18 +11,31 @@ CAT_SURFACE0 = "#313244"
 CAT_SURFACE1 = "#45475a"
 CAT_TEXT = "#cdd6f4"
 CAT_SUBTEXT0 = "#a6adc8"
-CAT_GREEN = "#a6e3a1"
-CAT_RED = "#f38ba8"
+CAT_SUBTEXT1 = "#bac2de"
+CAT_OVERLAY0 = "#6c7086"
+
+# Akzentfarben
 CAT_BLUE = "#89b4fa"
 CAT_LAVENDER = "#b4befe"
-CAT_OVERLAY0 = "#6c7086"
+CAT_SAPPHIRE = "#74c7ec"
+CAT_SKY = "#89dceb"
+CAT_TEAL = "#94e2d5"
+CAT_GREEN = "#a6e3a1"
+CAT_YELLOW = "#f9e2af"
+CAT_PEACH = "#fab387"
+CAT_MAROON = "#eba0ac"
+CAT_RED = "#f38ba8"
+CAT_MAUVE = "#cba6f7"
+CAT_PINK = "#f5c2e7"
+CAT_FLAMINGO = "#f2cdcd"
+CAT_ROSEWATER = "#f5e0dc"
 
 CAT_COLORS = {
     "BASE": CAT_BASE, "MANTLE": CAT_MANTLE, "CRUST": CAT_CRUST,
     "SURFACE0": CAT_SURFACE0, "SURFACE1": CAT_SURFACE1, 
     "TEXT": CAT_TEXT, "SUBTEXT0": CAT_SUBTEXT0,
-    "GREEN": CAT_GREEN, "RED": CAT_RED, "BLUE": CAT_BLUE,
-    "LAVENDER": CAT_LAVENDER, "OVERLAY0": CAT_OVERLAY0
+    "BLUE": CAT_BLUE, "LAVENDER": CAT_LAVENDER, "RED": CAT_RED, 
+    "GREEN": CAT_GREEN, "ROSEWATER": CAT_ROSEWATER, "OVERLAY0": CAT_OVERLAY0
 }
 
 def get_stylesheet():
@@ -26,106 +43,145 @@ def get_stylesheet():
         /* --- GLOBAL --- */
         QMainWindow, QWidget {{ 
             background-color: {CAT_BASE}; color: {CAT_TEXT}; 
-            font-family: 'Segoe UI', sans-serif; font-size: 13px; 
+            font-family: '{APP_FONT}', sans-serif; font-size: 14px; 
         }}
         
         QToolTip {{ 
-            background-color: {CAT_CRUST}; color: {CAT_TEXT}; 
-            border: 1px solid {CAT_SURFACE1}; padding: 5px; border-radius: 4px;
+            background-color: {CAT_MANTLE}; color: {CAT_TEXT}; 
+            border: 1px solid {CAT_MAUVE}; padding: 8px; border-radius: 6px;
         }}
 
         /* --- NAVIGATION BAR --- */
         QWidget#NavBar {{
             background-color: {CAT_MANTLE};
-            border-bottom: 1px solid {CAT_CRUST};
+            border-bottom: 2px solid {CAT_CRUST};
         }}
         
         QPushButton#NavBtn {{
-            background-color: transparent; border: none; border-radius: 6px;
-            color: {CAT_SUBTEXT0}; font-size: 14px; padding: 10px 15px; text-align: left;
+            background-color: transparent; 
+            border: none; 
+            border-left: 4px solid transparent; /* Platzhalter, damit Text nicht springt */
+            border-radius: 8px;
+            color: {CAT_SUBTEXT0}; 
+            font-size: 15px; 
+            padding: 12px 20px; 
+            text-align: left;
+            font-weight: 600;
+            min-width: 140px; /* <--- NEU: Feste Breite für gleichmäßige Optik */
         }}
         QPushButton#NavBtn:hover {{
             background-color: {CAT_SURFACE0}; color: {CAT_TEXT};
         }}
         QPushButton#NavBtn:checked {{
-            background-color: {CAT_SURFACE0}; color: {CAT_LAVENDER}; 
-            border-bottom: 3px solid {CAT_LAVENDER}; border-radius: 0px; /* Flat look */
+            background-color: {CAT_SURFACE0}; color: {CAT_MAUVE}; 
+            border-left: 4px solid {CAT_MAUVE}; 
+            border-radius: 4px; 
         }}
 
         /* --- INPUTS --- */
-        QLineEdit, QTextEdit, QPlainTextEdit {{ 
-            background-color: {CAT_MANTLE}; border: 1px solid {CAT_SURFACE0}; 
-            border-radius: 6px; padding: 8px; color: {CAT_TEXT}; 
+        QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox {{ 
+            background-color: {CAT_MANTLE}; border: 2px solid {CAT_SURFACE0}; 
+            border-radius: 8px; padding: 10px; color: {CAT_TEXT}; font-size: 14px;
+            min-height: 20px; 
         }}
-        QLineEdit:focus, QTextEdit:focus {{
-            border: 1px solid {CAT_LAVENDER}; background-color: {CAT_CRUST};
+        QLineEdit:focus, QTextEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
+            border: 2px solid {CAT_MAUVE}; background-color: {CAT_CRUST};
         }}
+        QLineEdit[text=""], QTextEdit[text=""] {{ color: {CAT_OVERLAY0}; }}
 
         /* --- COMBOBOX --- */
         QComboBox {{
-            background-color: {CAT_MANTLE}; border: 1px solid {CAT_SURFACE0};
-            border-radius: 6px; padding: 6px 10px; color: {CAT_TEXT};
+            background-color: {CAT_MANTLE}; border: 2px solid {CAT_SURFACE0};
+            border-radius: 8px; padding: 8px 12px; color: {CAT_TEXT};
+            min-height: 20px;
         }}
         QComboBox::drop-down {{ border: 0px; }}
         QComboBox::down-arrow {{
-            image: none; border-left: 5px solid transparent; border-right: 5px solid transparent; 
-            border-top: 5px solid {CAT_TEXT}; margin-right: 10px;
+            image: none; border-left: 6px solid transparent; border-right: 6px solid transparent; 
+            border-top: 6px solid {CAT_MAUVE}; margin-right: 12px;
         }}
         QComboBox QAbstractItemView {{
             background-color: {CAT_MANTLE}; border: 1px solid {CAT_SURFACE1};
-            selection-background-color: {CAT_SURFACE1}; color: {CAT_TEXT}; outline: 0; padding: 4px;
+            selection-background-color: {CAT_SURFACE1}; color: {CAT_TEXT}; outline: 0; padding: 5px;
         }}
 
         /* --- BUTTONS --- */
         QPushButton {{ 
             background-color: {CAT_SURFACE0}; color: {CAT_TEXT}; border: 1px solid {CAT_SURFACE1};
-            padding: 8px 16px; border-radius: 6px; font-weight: 600;
+            padding: 10px 20px; border-radius: 8px; font-weight: bold; font-size: 13px;
+            min-height: 20px;
         }}
-        QPushButton:hover {{ background-color: {CAT_SURFACE1}; border-color: {CAT_LAVENDER}; }}
-        QPushButton:pressed {{ background-color: {CAT_MANTLE}; }}
+        QPushButton:hover {{ 
+            background-color: {CAT_SURFACE1}; border-color: {CAT_LAVENDER}; color: {CAT_LAVENDER};
+        }}
+        QPushButton:pressed {{ background-color: {CAT_MANTLE}; border-color: {CAT_SURFACE0}; }}
         
         QPushButton#GenerateBtn {{ 
-            background-color: {CAT_GREEN}; color: {CAT_BASE}; border: none; font-size: 15px; 
+            background-color: {CAT_GREEN}; color: {CAT_BASE}; border: none; 
+            font-size: 18px; border-radius: 12px; font-weight: 800; letter-spacing: 1px;
+            padding: 15px; 
         }}
-        QPushButton#GenerateBtn:hover {{ background-color: #94e2d5; }}
-        QPushButton#GenerateBtn:disabled {{ background-color: {CAT_SURFACE1}; color: {CAT_OVERLAY0}; }}
+        QPushButton#GenerateBtn:hover {{ background-color: {CAT_TEAL}; margin-top: -2px; margin-bottom: 2px; }}
+        QPushButton#GenerateBtn:disabled {{ background-color: {CAT_SURFACE1}; color: {CAT_OVERLAY0}; margin: 0; }}
 
-        QPushButton#DeleteBtn:hover {{ background-color: {CAT_RED}; color: {CAT_BASE}; border-color: {CAT_RED}; }}
+        QPushButton#DeleteBtn {{ background-color: {CAT_MANTLE}; color: {CAT_RED}; border: 1px solid {CAT_RED}; }}
+        QPushButton#DeleteBtn:hover {{ background-color: {CAT_RED}; color: {CAT_BASE}; }}
 
-        QPushButton#ModeBtn {{ background-color: {CAT_MANTLE}; border: 1px solid {CAT_SURFACE1}; }}
-        QPushButton#ModeBtn:checked {{ background-color: {CAT_BLUE}; color: {CAT_BASE}; border-color: {CAT_BLUE}; }}
+        QPushButton#IOTDBtn {{
+             background-color: {CAT_MAUVE}; border-radius: 22px; border: 2px solid {CAT_BASE};
+        }}
+        QPushButton#IOTDBtn:hover {{ background-color: {CAT_PINK}; margin-top: -2px; }}
+
+        /* --- CHECKBOX --- */
+        QCheckBox {{ spacing: 10px; font-size: 14px; min-height: 24px; }}
+        QCheckBox::indicator {{ width: 22px; height: 22px; border-radius: 6px; border: 2px solid {CAT_SURFACE1}; background: {CAT_MANTLE}; }}
+        QCheckBox::indicator:checked {{ background: {CAT_MAUVE}; border-color: {CAT_MAUVE}; image: url(none); }}
+        QCheckBox::indicator:hover {{ border-color: {CAT_LAVENDER}; }}
 
         /* --- SLIDERS --- */
-        QSlider::groove:horizontal {{ height: 6px; background: {CAT_MANTLE}; border-radius: 3px; }}
+        QSlider::groove:horizontal {{ height: 8px; background: {CAT_SURFACE0}; border-radius: 4px; }}
         QSlider::handle:horizontal {{ 
-            background: {CAT_BLUE}; width: 16px; height: 16px; margin: -5px 0; border-radius: 8px; 
+            background: {CAT_MAUVE}; width: 22px; height: 22px; margin: -7px 0; border-radius: 11px; 
+            border: 3px solid {CAT_BASE};
         }}
-        QSlider::sub-page:horizontal {{ background: {CAT_SURFACE1}; border-radius: 3px; }}
+        QSlider::handle:horizontal:hover {{ background: {CAT_PINK}; }}
+        QSlider::sub-page:horizontal {{ background: {CAT_BLUE}; border-radius: 4px; }}
 
         /* --- SCROLLBARS --- */
-        QScrollBar:vertical {{
-            border: none; background: {CAT_BASE}; width: 8px; margin: 0;
-        }}
-        QScrollBar::handle:vertical {{
-            background: {CAT_SURFACE1}; min-height: 20px; border-radius: 4px;
-        }}
+        QScrollArea {{ border: none; background: transparent; }}
+        QScrollBar:vertical {{ border: none; background: {CAT_BASE}; width: 12px; margin: 0; }}
+        QScrollBar::handle:vertical {{ background: {CAT_SURFACE1}; min-height: 20px; border-radius: 6px; }}
         QScrollBar::handle:vertical:hover {{ background: {CAT_OVERLAY0}; }}
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
 
-        /* --- GROUP BOX --- */
+        /* --- GROUP BOX FIX --- */
         QGroupBox {{ 
-            border: 1px solid {CAT_SURFACE0}; margin-top: 24px; border-radius: 8px; padding-top: 16px;
+            border: 2px solid {CAT_SURFACE0}; 
+            margin-top: 40px; 
+            border-radius: 12px; 
+            padding: 35px 20px 25px 20px; 
         }}
         QGroupBox::title {{ 
-            subcontrol-origin: margin; left: 12px; padding: 0 8px; color: {CAT_LAVENDER}; font-weight: bold;
+            subcontrol-origin: margin; 
+            subcontrol-position: top left; 
+            left: 20px; 
+            padding: 5px 15px 5px 15px; 
+            color: {CAT_MAUVE}; 
+            background-color: {CAT_BASE}; 
+            font-weight: bold; 
+            font-size: 15px; 
+        }}
+
+        /* --- LISTS --- */
+        QListWidget {{ 
+            background-color: {CAT_MANTLE}; border: 2px solid {CAT_SURFACE0}; border-radius: 10px; outline: none;
+        }}
+        QListWidget::item {{ padding: 10px; border-radius: 6px; margin: 4px; }}
+        QListWidget::item:selected {{ 
+            background-color: {CAT_SURFACE1}; color: {CAT_MAUVE}; border: 1px solid {CAT_MAUVE};
         }}
         
-        /* --- LIST WIDGET --- */
-        QListWidget {{ background-color: {CAT_MANTLE}; border: 1px solid {CAT_SURFACE0}; border-radius: 6px; }}
-        QListWidget::item {{ padding: 8px; border-radius: 4px; margin: 2px; }}
-        QListWidget::item:selected {{ background-color: {CAT_SURFACE1}; color: {CAT_BLUE}; border: 1px solid {CAT_BLUE}; }}
-
         QLabel#PreviewLabel {{ 
-            background-color: {CAT_CRUST}; border: 2px dashed {CAT_SURFACE0}; border-radius: 8px; 
+            background-color: {CAT_CRUST}; border: 3px dashed {CAT_SURFACE0}; border-radius: 12px; 
         }}
     """

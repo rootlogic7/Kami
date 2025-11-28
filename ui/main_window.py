@@ -17,7 +17,6 @@ from app.engine import T2IEngine
 from app.config import SessionConfig, STYLES
 from app.utils import get_file_list, generate_random_prompt
 from app.style import get_stylesheet, CAT_COLORS
-# NEU: Import von delete_image_record
 from app.database import get_filtered_images, get_all_models, delete_image_record
 
 from ui.workers import GeneratorWorker, DBScannerWorker, ThumbnailLoader
@@ -35,7 +34,6 @@ class MainWindow(QMainWindow):
         self.engine = T2IEngine()
         self.config = SessionConfig()
         self.history = []
-        # self.input_img_pil = None # Entfernt
         self.threadpool = QThreadPool()
         
         self.gallery_results = []       
@@ -55,9 +53,9 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(get_stylesheet())
 
     def create_nav_btn(self, text, icon_name):
-        btn = QPushButton(f" {text}")
-        btn.setIcon(qta.icon(icon_name, color=CAT_COLORS['SUBTEXT0']))
-        btn.setIconSize(QSize(18, 18))
+        btn = QPushButton(f"  {text}")
+        btn.setIcon(qta.icon(icon_name, color=CAT_COLORS['SUBTEXT0'], scale_factor=1.2))
+        btn.setIconSize(QSize(24, 24))
         btn.setObjectName("NavBtn")
         btn.setCheckable(True)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -74,15 +72,15 @@ class MainWindow(QMainWindow):
         # 1. TOP NAVIGATION BAR
         self.navbar = QWidget()
         self.navbar.setObjectName("NavBar")
-        self.navbar.setFixedHeight(60)
+        self.navbar.setFixedHeight(70)
         nav_layout = QHBoxLayout(self.navbar)
         nav_layout.setContentsMargins(20, 0, 20, 0)
-        nav_layout.setSpacing(10)
+        nav_layout.setSpacing(15)
 
         self.btn_nav_gen = self.create_nav_btn("Generate", "fa5s.magic")
-        self.btn_nav_models = self.create_nav_btn("Models", "fa5s.sliders-h")
-        self.btn_nav_favs = self.create_nav_btn("Favorites", "fa5s.star")
-        self.btn_nav_gallery = self.create_nav_btn("Gallery", "fa5s.images")
+        self.btn_nav_models = self.create_nav_btn("Settings", "fa5s.sliders-h")
+        self.btn_nav_favs = self.create_nav_btn("Favorites", "fa5s.bookmark")
+        self.btn_nav_gallery = self.create_nav_btn("Gallery", "fa5s.layer-group")
 
         self.nav_group = QButtonGroup(self)
         self.nav_group.addButton(self.btn_nav_gen, 0)
@@ -96,20 +94,18 @@ class MainWindow(QMainWindow):
         nav_layout.addWidget(self.btn_nav_favs)
         nav_layout.addWidget(self.btn_nav_gallery)
 
+        nav_layout.addStretch()
+
+        # IOTD Button
         btn_iotd = QPushButton()
-        btn_iotd.setIcon(qta.icon('fa5s.dice', color=CAT_COLORS['LAVENDER']))
-        btn_iotd.setIconSize(QSize(22, 22))
-        btn_iotd.setToolTip("Generate 'Image of the Day' (Random)")
-        btn_iotd.setFixedSize(40, 40) # Quadratischer Button
-        btn_iotd.setStyleSheet(f"""
-            QPushButton {{ background-color: {CAT_COLORS['SURFACE0']}; border-radius: 20px; }}
-            QPushButton:hover {{ background-color: {CAT_COLORS['SURFACE1']}; }}
-        """)
+        btn_iotd.setObjectName("IOTDBtn")
+        btn_iotd.setIcon(qta.icon('fa5s.dice-d20', color=CAT_COLORS['BASE']))
+        btn_iotd.setIconSize(QSize(26, 26))
+        btn_iotd.setToolTip("Roll the Dice (Random Image)")
+        btn_iotd.setFixedSize(45, 45)
         btn_iotd.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_iotd.clicked.connect(self.start_iotd_workflow)
         nav_layout.addWidget(btn_iotd)
-
-        nav_layout.addStretch() 
 
         main_layout.addWidget(self.navbar)
 
@@ -143,7 +139,7 @@ class MainWindow(QMainWindow):
         controls_container.setMinimumWidth(400)
         controls_container.setMaximumWidth(500)
         c_layout = QVBoxLayout(controls_container)
-        c_layout.setContentsMargins(15, 15, 15, 15)
+        c_layout.setContentsMargins(20, 20, 20, 20)
         c_layout.setSpacing(15)
 
         scroll = QScrollArea()
@@ -152,11 +148,7 @@ class MainWindow(QMainWindow):
         scroll_content = QWidget()
         sc_layout = QVBoxLayout(scroll_content)
         
-        # Modus-Auswahl entfernt
         sc_layout.addWidget(QLabel("<h3>Text-to-Image Mode</h3>"))
-
-        # I2I-Gruppe entfernt
-        # self.i2i_group.setVisible(False) entfernt
 
         sc_layout.addWidget(QLabel("Positive Prompt"))
         self.txt_prompt = QTextEdit()
@@ -169,7 +161,7 @@ class MainWindow(QMainWindow):
         self.txt_neg.setMaximumHeight(60)
         sc_layout.addWidget(self.txt_neg)
 
-        p_group = QGroupBox("Parameters")
+        p_group = QGroupBox("Generation Parameters")
         p_layout = QGridLayout(p_group)
         p_layout.addWidget(QLabel("Steps:"), 0, 0)
         self.slider_steps = QSlider(Qt.Orientation.Horizontal)
@@ -202,15 +194,15 @@ class MainWindow(QMainWindow):
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
-        self.progress_bar.setFixedHeight(5)
+        self.progress_bar.setFixedHeight(6)
         self.progress_bar.setTextVisible(False)
         c_layout.addWidget(self.progress_bar)
         
-        self.btn_generate = QPushButton(" GENERATE")
-        self.btn_generate.setIcon(qta.icon('fa5s.rocket', color=CAT_COLORS['BASE']))
-        self.btn_generate.setIconSize(QSize(20, 20))
+        self.btn_generate = QPushButton(" GENERATE IMAGE")
+        self.btn_generate.setIcon(qta.icon('fa5s.magic', color=CAT_COLORS['BASE']))
+        self.btn_generate.setIconSize(QSize(22, 22))
         self.btn_generate.setObjectName("GenerateBtn")
-        self.btn_generate.setMinimumHeight(55)
+        self.btn_generate.setMinimumHeight(60)
         self.btn_generate.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_generate.clicked.connect(self.start_generation)
         c_layout.addWidget(self.btn_generate)
@@ -223,7 +215,7 @@ class MainWindow(QMainWindow):
         self.lbl_main_preview.setObjectName("PreviewLabel")
         self.lbl_main_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_main_preview.setSizePolicy(self.lbl_main_preview.sizePolicy().horizontalPolicy(), self.lbl_main_preview.sizePolicy().verticalPolicy())
-        placeholder = qta.icon('fa5s.image', color=CAT_COLORS['SURFACE1']).pixmap(QSize(128, 128))
+        placeholder = qta.icon('fa5s.image', color=CAT_COLORS['SURFACE1']).pixmap(QSize(150, 150))
         self.lbl_main_preview.setPixmap(placeholder)
         pc_layout.addWidget(self.lbl_main_preview, 1)
         
@@ -250,10 +242,24 @@ class MainWindow(QMainWindow):
     def init_page_models(self):
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(50, 50, 50, 50)
-        layout.addWidget(QLabel("<h2>Model Configuration</h2>"))
+        layout.setContentsMargins(60, 40, 60, 40)
+        layout.setSpacing(25)
         
-        m_group = QGroupBox("Base Model & Refiner")
+        header_lbl = QLabel("System Configuration")
+        header_lbl.setStyleSheet(f"font-size: 24px; font-weight: bold; color: {CAT_COLORS['LAVENDER']};")
+        layout.addWidget(header_lbl)
+        
+        main_grid = QGridLayout()
+        main_grid.setColumnStretch(0, 3)
+        main_grid.setColumnStretch(1, 2)
+        main_grid.setSpacing(30)
+        
+        # LEFT PANEL
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(0,0,0,0)
+        
+        m_group = QGroupBox("🤖 Base Model & Architecture")
         m_grid = QGridLayout(m_group)
         self.combo_model = setup_combo_view(QComboBox())
         self.combo_model.addItem("stabilityai/stable-diffusion-xl-base-1.0")
@@ -261,11 +267,12 @@ class MainWindow(QMainWindow):
             self.combo_model.addItem(os.path.join(CHECKPOINTS_DIR, f))
         m_grid.addWidget(QLabel("Checkpoint:"), 0, 0)
         m_grid.addWidget(self.combo_model, 0, 1)
-        self.chk_refiner = QCheckBox("Use SDXL Refiner")
+        self.chk_refiner = QCheckBox("Enable SDXL Refiner Pipeline")
+        self.chk_refiner.setCursor(Qt.CursorShape.PointingHandCursor)
         m_grid.addWidget(self.chk_refiner, 1, 0, 1, 2)
-        layout.addWidget(m_group)
+        left_layout.addWidget(m_group)
         
-        l_group = QGroupBox("LoRA Configuration")
+        l_group = QGroupBox("🧬 LoRA Networks")
         l_grid = QGridLayout(l_group)
         self.combo_lora = setup_combo_view(QComboBox())
         self.combo_lora.addItem("None")
@@ -273,7 +280,7 @@ class MainWindow(QMainWindow):
             self.combo_lora.addItem(os.path.join(LORAS_DIR, f))
         l_grid.addWidget(QLabel("LoRA File:"), 0, 0)
         l_grid.addWidget(self.combo_lora, 0, 1)
-        l_grid.addWidget(QLabel("Scale:"), 1, 0)
+        l_grid.addWidget(QLabel("Strength:"), 1, 0)
         ls_layout = QHBoxLayout()
         self.slider_lora = QSlider(Qt.Orientation.Horizontal)
         self.slider_lora.setRange(0, 200)
@@ -285,32 +292,49 @@ class MainWindow(QMainWindow):
         ls_layout.addWidget(self.slider_lora)
         ls_layout.addWidget(self.spin_lora)
         l_grid.addLayout(ls_layout, 1, 1)
-        layout.addWidget(l_group)
+        left_layout.addWidget(l_group)
         
-        s_group = QGroupBox("Styles & Advanced")
+        left_layout.addStretch()
+        
+        # RIGHT PANEL
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(0,0,0,0)
+        
+        s_group = QGroupBox("🎨 Style & Processing")
         s_grid = QGridLayout(s_group)
         self.combo_style = setup_combo_view(QComboBox())
         for k in STYLES.keys():
             self.combo_style.addItem(k)
         self.combo_style.currentTextChanged.connect(lambda t: setattr(self.config, 'current_style', t))
-        s_grid.addWidget(QLabel("Preset:"), 0, 0)
+        s_grid.addWidget(QLabel("Style Preset:"), 0, 0)
         s_grid.addWidget(self.combo_style, 0, 1)
-        self.chk_pony = QCheckBox("Pony Mode (Score Tags)")
-        s_grid.addWidget(self.chk_pony, 1, 0)
-        self.chk_freeu = QCheckBox("FreeU (Quality Boost)")
-        s_grid.addWidget(self.chk_freeu, 1, 1)
-        layout.addWidget(s_group)
-        layout.addStretch()
+        right_layout.addWidget(s_group)
+        
+        adv_group = QGroupBox("⚡ Advanced Processing")
+        adv_layout = QVBoxLayout(adv_group)
+        self.chk_pony = QCheckBox("Pony Diffusion V6 Mode (Score Tags)")
+        self.chk_freeu = QCheckBox("FreeU (Feature Re-weighting)")
+        adv_layout.addWidget(self.chk_pony)
+        adv_layout.addWidget(self.chk_freeu)
+        right_layout.addWidget(adv_group)
+        
+        right_layout.addStretch()
+        
+        main_grid.addWidget(left_panel, 0, 0)
+        main_grid.addWidget(right_panel, 0, 1)
+        layout.addLayout(main_grid)
         self.stack.addWidget(page)
 
     # --- PAGE 3: FAVORITES ---
     def init_page_favs(self):
         page = QWidget()
         layout = QHBoxLayout(page)
+        layout.setContentsMargins(20, 20, 20, 20)
         
         left_f = QWidget()
         left_fl = QVBoxLayout(left_f)
-        left_fl.addWidget(QLabel("Saved Favorites"))
+        left_fl.addWidget(QLabel("<h3>Saved Favorites</h3>"))
         self.list_favs = QListWidget()
         self.list_favs.itemClicked.connect(self.on_favorite_selected)
         left_fl.addWidget(self.list_favs)
@@ -329,7 +353,6 @@ class MainWindow(QMainWindow):
         f_btn_layout = QHBoxLayout()
         btn_load_fav = QPushButton(" Load")
         btn_load_fav.setIcon(qta.icon('fa5s.upload', color=CAT_COLORS['TEXT']))
-        btn_load_fav.setObjectName("LoadBtn")
         btn_load_fav.clicked.connect(self.load_favorite_to_gen)
         
         btn_update_fav = QPushButton(" Update")
@@ -341,7 +364,7 @@ class MainWindow(QMainWindow):
         btn_new_fav.clicked.connect(self.save_new_favorite)
         
         btn_del_fav = QPushButton(" Delete")
-        btn_del_fav.setIcon(qta.icon('fa5s.trash', color=CAT_COLORS['BASE']))
+        btn_del_fav.setIcon(qta.icon('fa5s.trash', color=CAT_COLORS['RED']))
         btn_del_fav.setObjectName("DeleteBtn")
         btn_del_fav.clicked.connect(self.delete_favorite)
         
@@ -364,7 +387,7 @@ class MainWindow(QMainWindow):
         
         # HEADER
         header_container = QWidget()
-        header_container.setStyleSheet(f"background-color: {CAT_COLORS['MANTLE']}; border-bottom: 1px solid {CAT_COLORS['SURFACE0']};")
+        header_container.setStyleSheet(f"background-color: {CAT_COLORS['MANTLE']}; border-bottom: 2px solid {CAT_COLORS['CRUST']};")
         header_container.setFixedHeight(70)
         
         header_layout = QHBoxLayout(header_container)
@@ -372,14 +395,14 @@ class MainWindow(QMainWindow):
         header_layout.setSpacing(15)
         
         self.txt_search = QLineEdit()
-        self.txt_search.setPlaceholderText("🔍 Suche nach Prompts, Seeds oder Modellen...")
+        self.txt_search.setPlaceholderText("🔍 Search prompts, seeds, or models...")
         self.txt_search.setMinimumHeight(40)
         self.txt_search.setStyleSheet(f"""
             QLineEdit {{ 
                 font-size: 14px; padding-left: 10px; border-radius: 20px; 
-                border: 1px solid {CAT_COLORS['SURFACE1']}; background-color: {CAT_COLORS['BASE']};
+                border: 2px solid {CAT_COLORS['SURFACE1']}; background-color: {CAT_COLORS['BASE']};
             }}
-            QLineEdit:focus {{ border: 1px solid {CAT_COLORS['BLUE']}; }}
+            QLineEdit:focus {{ border: 2px solid {CAT_COLORS['BLUE']}; }}
         """)
         self.txt_search.textChanged.connect(self.on_gallery_search_changed)
         
@@ -397,7 +420,7 @@ class MainWindow(QMainWindow):
         
         btn_scan = QPushButton(" Rescan")
         btn_scan.setIcon(qta.icon('fa5s.sync-alt', color=CAT_COLORS['TEXT']))
-        btn_scan.setFixedSize(90, 35)
+        btn_scan.setFixedSize(100, 35)
         btn_scan.clicked.connect(self.start_db_scan)
 
         header_layout.addWidget(self.txt_search, 1)
@@ -430,13 +453,13 @@ class MainWindow(QMainWindow):
         
         pag_container = QWidget()
         pag_container.setFixedHeight(50)
-        pag_container.setStyleSheet(f"background-color: {CAT_COLORS['MANTLE']}; border-top: 1px solid {CAT_COLORS['SURFACE0']};")
+        pag_container.setStyleSheet(f"background-color: {CAT_COLORS['MANTLE']}; border-top: 2px solid {CAT_COLORS['CRUST']};")
         self.pag_layout = QHBoxLayout(pag_container)
         self.pag_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         left_layout.addWidget(pag_container)
         
         right_widget = QWidget()
-        right_widget.setStyleSheet(f"background-color: {CAT_COLORS['MANTLE']}; border-left: 1px solid {CAT_COLORS['SURFACE0']};")
+        right_widget.setStyleSheet(f"background-color: {CAT_COLORS['MANTLE']}; border-left: 2px solid {CAT_COLORS['CRUST']};")
         right_layout = QVBoxLayout(right_widget)
         right_layout.setContentsMargins(20, 20, 20, 20)
         right_layout.setSpacing(15)
@@ -446,7 +469,7 @@ class MainWindow(QMainWindow):
         self.gal_detail_img = ClickableLabel("")
         self.gal_detail_img.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.gal_detail_img.setMinimumHeight(300)
-        self.gal_detail_img.setStyleSheet(f"background-color: {CAT_COLORS['CRUST']}; border: 1px solid {CAT_COLORS['SURFACE0']}; border-radius: 8px;")
+        self.gal_detail_img.setStyleSheet(f"background-color: {CAT_COLORS['CRUST']}; border: 2px solid {CAT_COLORS['SURFACE0']}; border-radius: 8px;")
         self.gal_detail_img.setText("Select an image...")
         right_layout.addWidget(self.gal_detail_img)
         
@@ -459,19 +482,12 @@ class MainWindow(QMainWindow):
         btn_use_params.setIcon(qta.icon('fa5s.magic', color=CAT_COLORS['TEXT']))
         btn_use_params.clicked.connect(self.use_gallery_params)
         
-        # Button "Use as Input (I2I)" entfernt
-        # btn_use_img = QPushButton(" Use as Input (I2I)")
-        # btn_use_img.setIcon(qta.icon('fa5s.image', color=CAT_COLORS['TEXT']))
-        # btn_use_img.clicked.connect(self.use_gallery_image_i2i) # entfernt
-        
-        # NEU: Delete Button im rechten Panel
         btn_del_img = QPushButton(" Delete Image")
-        btn_del_img.setIcon(qta.icon('fa5s.trash', color=CAT_COLORS['BASE']))
-        btn_del_img.setStyleSheet(f"background-color: {CAT_COLORS['RED']}; color: {CAT_COLORS['BASE']}; margin-top: 10px;")
+        btn_del_img.setObjectName("DeleteBtn")
+        btn_del_img.setIcon(qta.icon('fa5s.trash', color=CAT_COLORS['RED']))
         btn_del_img.clicked.connect(self.delete_gallery_image)
         
         right_layout.addWidget(btn_use_params)
-        # right_layout.addWidget(btn_use_img) # entfernt
         right_layout.addWidget(btn_del_img)
         right_layout.addStretch()
 
@@ -542,12 +558,11 @@ class MainWindow(QMainWindow):
         lbl.setFixedSize(200, 200) 
         lbl.setScaledContents(True) 
         lbl.setStyleSheet(f"""
-            QLabel {{ border: 1px solid {CAT_COLORS['SURFACE1']}; border-radius: 6px; background-color: {CAT_COLORS['MANTLE']}; }}
+            QLabel {{ border: 2px solid {CAT_COLORS['SURFACE1']}; border-radius: 8px; background-color: {CAT_COLORS['MANTLE']}; }}
             QLabel:hover {{ border: 2px solid {CAT_COLORS['BLUE']}; }}
         """)
         lbl.setToolTip(tooltip)
         lbl.clicked.connect(lambda: self.show_gallery_details(row_data, pixmap))
-        # lbl.double_clicked.connect(lambda: self.set_input_image(path)) # entfernt
         self.db_layout.addWidget(lbl, count // cols, count % cols)
 
     def update_pagination_controls(self, total_items):
@@ -570,8 +585,10 @@ class MainWindow(QMainWindow):
             btn = QPushButton(str(p + 1))
             btn.setFixedSize(30, 30); btn.setCheckable(True)
             btn.setChecked(p == self.gallery_current_page)
-            if p == self.gallery_current_page: btn.setStyleSheet(f"background-color: {CAT_COLORS['BLUE']}; color: {CAT_COLORS['BASE']}; border: none;")
-            else: btn.setStyleSheet("background-color: transparent;")
+            if p == self.gallery_current_page: 
+                btn.setStyleSheet(f"background-color: {CAT_COLORS['BLUE']}; color: {CAT_COLORS['BASE']}; border: none;")
+            else: 
+                btn.setStyleSheet("background-color: transparent;")
             btn.clicked.connect(lambda _, page=p: self.change_gallery_page(page))
             self.pag_layout.addWidget(btn)
 
@@ -613,13 +630,10 @@ class MainWindow(QMainWindow):
 
     def open_fullscreen_viewer(self, path):
         viewer = ImageViewerDialog(path, self)
-        # NEU: Signal für Löschung verbinden
         viewer.delete_confirmed.connect(self.handle_viewer_delete)
         viewer.exec()
 
-    # NEU: Handler für Löschung aus Viewer
     def handle_viewer_delete(self, path):
-        # Viewer hat schon bestätigt, also direkt löschen
         try:
             os.remove(path)
             delete_image_record(path)
@@ -631,7 +645,6 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Could not delete: {e}")
 
-    # NEU: Handler für Löschung aus Galerie-Panel
     def delete_gallery_image(self):
         if not self.selected_gallery_item: return
         path = self.selected_gallery_item['path']
@@ -665,24 +678,16 @@ class MainWindow(QMainWindow):
         self.switch_view(0)
         QMessageBox.information(self, "Loaded", "Parameters loaded from image!")
 
-    # use_gallery_image_i2i entfernt
-    # toggle_mode entfernt
-    # load_input_image_dialog entfernt
-    # set_input_image entfernt
-
-    # RESTORED: Load settings (essential for startup)
     def load_settings_from_config(self):
         self.txt_neg.setText(self.config.neg_prompt); self.spin_steps.setValue(self.config.steps); self.spin_cfg.setValue(self.config.guidance)
         self.chk_refiner.setChecked(self.config.use_refiner); self.chk_pony.setChecked(self.config.pony_mode); self.chk_freeu.setChecked(self.config.use_freeu)
         idx = self.combo_style.findText(self.config.current_style)
         if idx >= 0: self.combo_style.setCurrentIndex(idx)
 
-    # RESTORED: Refresh favorites list
     def refresh_favorites_list(self):
         self.list_favs.clear()
         for fav in self.config.favourites: self.list_favs.addItem(f"{fav['name']}")
 
-    # RESTORED: On favorite selected (CRASH FIX) - Logic improved to handle negative prompt
     def on_favorite_selected(self, item):
         idx = self.list_favs.row(item)
         if 0 <= idx < len(self.config.favourites):
@@ -690,32 +695,28 @@ class MainWindow(QMainWindow):
             self.fav_txt_prompt.setText(fav.get('prompt', ''))
             self.fav_txt_neg.setText(fav.get('negative_prompt', ''))
 
-    # RESTORED: Load favorite to generate - Logic improved to load negative prompt
     def load_favorite_to_gen(self):
         self.txt_prompt.setText(self.fav_txt_prompt.toPlainText())
-        self.txt_neg.setText(self.fav_txt_neg.toPlainText()) # Lade Neg. Prompt
+        self.txt_neg.setText(self.fav_txt_neg.toPlainText())
         self.btn_nav_gen.setChecked(True); self.switch_view(0)
 
-    # RESTORED: Save new favorite - Logic improved to save negative prompt
     def save_new_favorite(self):
         text, ok = QInputDialog.getText(self, "Save New", "Name:")
         if ok and text:
             self.config.favourites.append({
                 "name": text, 
                 "prompt": self.fav_txt_prompt.toPlainText(),
-                "negative_prompt": self.fav_txt_neg.toPlainText() # Speichere Neg. Prompt
+                "negative_prompt": self.fav_txt_neg.toPlainText()
             })
             self.config.save_favorites(); self.refresh_favorites_list()
 
-    # RESTORED: Update favorite - Logic improved to update negative prompt
     def update_favorite(self):
         row = self.list_favs.currentRow()
         if row >= 0:
             self.config.favourites[row]['prompt'] = self.fav_txt_prompt.toPlainText()
-            self.config.favourites[row]['negative_prompt'] = self.fav_txt_neg.toPlainText() # Update Neg. Prompt
+            self.config.favourites[row]['negative_prompt'] = self.fav_txt_neg.toPlainText()
             self.config.save_favorites(); QMessageBox.information(self, "Info", "Favorite updated!")
 
-    # RESTORED: Delete favorite - Logic improved to clear text fields
     def delete_favorite(self):
         row = self.list_favs.currentRow()
         if row >= 0:
@@ -743,10 +744,8 @@ class MainWindow(QMainWindow):
             "model_path": self.combo_model.currentText(), "prompt": prompt_final, "negative_prompt": neg_final,
             "steps": self.spin_steps.value(), "guidance_scale": self.spin_cfg.value(), "seed": seed_val,
             "use_refiner": self.chk_refiner.isChecked(), "lora_path": lora_p, "lora_scale": self.spin_lora.value(),
-            # strength entfernt
             "freeu_args": {"s1":0.9, "s2":0.2, "b1":1.3, "b2":1.4} if self.chk_freeu.isChecked() else None
         }
-        # mode und input_img_pil entfernt
         self.thread = QThread()
         self.worker = GeneratorWorker(self.engine, params)
         self.worker.moveToThread(self.thread)
@@ -759,7 +758,7 @@ class MainWindow(QMainWindow):
         self.thread.start()
 
     def on_generation_finished(self, path):
-        self.btn_generate.setEnabled(True); self.btn_generate.setText(" GENERATE")
+        self.btn_generate.setEnabled(True); self.btn_generate.setText(" GENERATE IMAGE")
         self.progress_bar.setVisible(False)
         pixmap = QPixmap(path)
         if not pixmap.isNull():
@@ -767,81 +766,63 @@ class MainWindow(QMainWindow):
         self.add_to_history(path); self.config.prompt = self.txt_prompt.toPlainText(); self.config.save_session_state(); self.start_db_scan()
 
     def on_generation_error(self, err):
-        self.btn_generate.setEnabled(True); self.btn_generate.setText(" GENERATE")
+        self.btn_generate.setEnabled(True); self.btn_generate.setText(" GENERATE IMAGE")
         self.progress_bar.setVisible(False); QMessageBox.critical(self, "Error", err)
 
     def add_to_history(self, path):
         row = len(self.history) // 4; col = len(self.history) % 4
         lbl = ClickableLabel(path)
         pix = QPixmap(path); lbl.setPixmap(pix.scaled(150, 150, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
-        lbl.setFixedSize(150, 150); lbl.setStyleSheet(f"border: 1px solid {CAT_COLORS['SURFACE1']}; border-radius: 4px;")
-        # lbl.double_clicked.connect(lambda: self.set_input_image(path)) # entfernt
+        lbl.setFixedSize(150, 150); lbl.setStyleSheet(f"border: 2px solid {CAT_COLORS['SURFACE1']}; border-radius: 8px;")
         self.history_layout.addWidget(lbl, row, col); self.history.append(path)
 
-    # --- IOTD WORKFLOW ---
     def start_iotd_workflow(self):
-        # 1. Prompt generieren
         prompt = generate_random_prompt()
-        
-        # 2. User fragen (Bestätigung)
         msg = QMessageBox(self)
         msg.setWindowTitle("Image of the Day")
         msg.setText("Generate a random image with this prompt?")
         msg.setInformativeText(prompt)
         msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         msg.setDefaultButton(QMessageBox.StandardButton.Yes)
-        # Styling für die Messagebox (optional, damit es zum Theme passt)
         msg.setStyleSheet(f"background-color: {CAT_COLORS['MANTLE']}; color: {CAT_COLORS['TEXT']};")
         
         ret = msg.exec()
         
         if ret == QMessageBox.StandardButton.Yes:
-            # 3. Generierung starten
-            self.btn_generate.setEnabled(False) # Hauptbutton sperren
+            self.btn_generate.setEnabled(False)
             self.progress_bar.setVisible(True)
             self.progress_bar.setRange(0, 0)
             
-            # Gute Standard-Parameter für SDXL
             params = {
-                "model_path": self.config.model_path, # Nutzt das zuletzt eingestellte Modell
+                "model_path": self.config.model_path,
                 "prompt": prompt,
                 "negative_prompt": "ugly, deformed, noisy, blurry, low contrast, text, watermark",
-                "steps": 40, # Etwas mehr Qualität
+                "steps": 40,
                 "guidance_scale": 7.5,
-                "seed": None, # Zufall
+                "seed": None,
                 "use_refiner": self.config.use_refiner,
                 "lora_path": None,
                 "lora_scale": 0.8,
-                # strength entfernt
                 "freeu_args": None
             }
             
             self.thread = QThread()
-            self.worker = GeneratorWorker(self.engine, params) # ohne mode und input_image
+            self.worker = GeneratorWorker(self.engine, params)
             self.worker.moveToThread(self.thread)
             self.thread.started.connect(self.worker.run)
-            
-            # WICHTIG: Wir verbinden es mit einer SPEZIELLEN on_finished Methode
             self.worker.finished.connect(self.on_iotd_finished)
-            
-            self.worker.error.connect(self.on_generation_error) # Standard Error Handler nutzen
+            self.worker.error.connect(self.on_generation_error)
             self.worker.finished.connect(self.thread.quit)
             self.worker.finished.connect(self.worker.deleteLater)
             self.thread.finished.connect(self.thread.deleteLater)
             self.thread.start()
 
     def on_iotd_finished(self, path):
-        # UI zurücksetzen
         self.btn_generate.setEnabled(True)
         self.progress_bar.setVisible(False)
-        
-        # In DB und History aufnehmen (wie bei normaler Generierung)
         self.add_to_history(path)
         self.start_db_scan()
-        
-        # SPEZIAL-EFFEKT: Direkt im großen Viewer öffnen
-        # Wir nutzen den neuen ImageViewerDialog, den wir vorhin erstellt haben
         viewer = ImageViewerDialog(path, self)
-        viewer.delete_confirmed.connect(self.handle_viewer_delete) # Löschen erlauben
+        viewer.delete_confirmed.connect(self.handle_viewer_delete)
         viewer.setWindowTitle("Image of the Day - Result")
         viewer.exec()
