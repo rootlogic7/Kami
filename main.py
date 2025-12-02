@@ -1,7 +1,8 @@
 import sys
 import threading
 import logging
-from typing import Optional
+import os
+from typing import Optional, List
 
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
@@ -10,6 +11,7 @@ from PySide6.QtCore import QObject, Slot, Signal, QUrl
 # Import backend modules
 from app.engine import T2IEngine
 from app.server import start_server_thread
+from app.utils import get_file_list
 import app.server as server_module
 
 # Configure logging
@@ -31,16 +33,45 @@ class KamiBridge(QObject):
         super().__init__()
         self.engine = engine
 
-    @Slot(str, str, int, float, str, bool)
-    def generate(self, prompt: str, neg_prompt: str, steps: int, cfg: float, seed_str: str, use_refiner: bool):
+    @Slot(result=list)
+    def get_models(self):
+        """Returns a list of available checkpoint models found in models/checkpoints."""
+        checkpoints_dir = "models/checkpoints"
+        models = get_file_list(checkpoints_dir)
+        # Prepend the default HuggingFace ID
+        return ["stabilityai/stable-diffusion-xl-base-1.0"] + models
+
+    @Slot(result=list)
+    def get_loras(self):
+        """Returns a list of available LoRA models found in models/loras."""
+        loras_dir = "models/loras"
+        loras = get_file_list(loras_dir)
+        return ["None"] + loras
+
+    @Slot(str, str, int, float, str, bool, str, str, float)
+    def generate(self, prompt: str, neg_prompt: str, steps: int, cfg: float, seed_str: str, 
+                 use_refiner: bool, model_name: str, lora_name: str, lora_scale: float):
         """
         Main generation slot called from QML.
-        Accepts all standard parameters for T2I generation.
+        Accepts all standard parameters including model and LoRA selection.
         """
-        logger.info(f"UI requested generation: '{prompt[:30]}...' (Steps: {steps}, CFG: {cfg})")
+        logger.info(f"UI requested generation: '{prompt[:30]}...'")
+        logger.info(f"Params: Model='{model_name}', LoRA='{lora_name}' ({lora_scale}), Refiner={use_refiner}")
+        
         self.statusUpdated.emit("Starting generation...")
         
-        # Parse seed (QML sends string to allow empty value)
+        # 1. Resolve Model Path
+        # If it's the default ID, keep it. Otherwise, assume it's a filename in models/checkpoints.
+        real_model_path = model_name
+        if model_name != "stabilityai/stable-diffusion-xl-base-1.0":
+             real_model_path = os.path.join("models/checkpoints", model_name)
+
+        # 2. Resolve LoRA Path
+        real_lora_path = None
+        if lora_name and lora_name != "None":
+             real_lora_path = os.path.join("models/loras", lora_name)
+
+        # 3. Parse Seed
         seed: Optional[int] = None
         if seed_str.strip():
             try:
@@ -50,13 +81,23 @@ class KamiBridge(QObject):
         
         def run_job():
             try:
+                # Handle Model Switching
+                # If the requested model is different from the currently loaded ID, force a reload
+                if self.engine.base_model_id != real_model_path:
+                    logger.info(f"Switching model from '{self.engine.base_model_id}' to '{real_model_path}'")
+                    self.engine.base_model_id = real_model_path
+                    # Setting pipeline to None forces engine.load_base_model() to re-initialize it
+                    self.engine.base_pipeline = None 
+                
                 path = self.engine.generate(
                     prompt=prompt,
                     negative_prompt=neg_prompt,
                     steps=steps,
                     guidance_scale=cfg,
                     seed=seed,
-                    use_refiner=use_refiner
+                    use_refiner=use_refiner,
+                    lora_path=real_lora_path,
+                    lora_scale=lora_scale
                 )
                 self.generationFinished.emit(path)
                 self.statusUpdated.emit("Ready")
