@@ -54,7 +54,11 @@ Item {
             }
         }
         
-        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.SURFACE0 }
+        Rectangle { 
+            Layout.fillWidth: true
+            height: 1
+            color: Theme.SURFACE0 
+        }
 
         // --- Content Stack ---
         StackLayout {
@@ -87,14 +91,29 @@ Item {
                             placeholderText: "Search prompts..."
                             Layout.fillWidth: true
                             color: Theme.TEXT
-                            background: Rectangle { color: Theme.MANTLE; border.color: Theme.SURFACE0; radius: Theme.BORDER_RADIUS }
-                            onAccepted: { tabGallery.searchText = text; tabGallery.refreshGallery() }
+                            background: Rectangle { 
+                                color: Theme.MANTLE
+                                border.color: Theme.SURFACE0
+                                radius: Theme.BORDER_RADIUS 
+                            }
+                            onAccepted: { 
+                                tabGallery.searchText = text
+                                tabGallery.refreshGallery() 
+                            }
                         }
                         Button {
                             text: "Refresh"
                             onClicked: tabGallery.refreshGallery()
-                            background: Rectangle { color: Theme.SURFACE0; radius: Theme.BORDER_RADIUS }
-                            contentItem: Text { text: parent.text; color: Theme.TEXT; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                            background: Rectangle { 
+                                color: Theme.SURFACE0
+                                radius: Theme.BORDER_RADIUS 
+                            }
+                            contentItem: Text { 
+                                text: parent.text
+                                color: Theme.TEXT
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter 
+                            }
                         }
                     }
                     
@@ -149,7 +168,11 @@ Item {
                                         anchors.right: parent.right
                                         anchors.top: parent.top
                                         anchors.margins: 5
-                                        Text { text: "✕"; anchors.centerIn: parent; color: "white" }
+                                        Text { 
+                                            text: "✕"
+                                            anchors.centerIn: parent
+                                            color: "white" 
+                                        }
                                         MouseArea {
                                             anchors.fill: parent
                                             cursorShape: Qt.PointingHandCursor
@@ -175,7 +198,152 @@ Item {
             // === TAB 2: PRESETS ===
             Item { 
                 id: tabPresets
-                Text { text: "Presets Coming Soon"; color: Theme.TEXT; anchors.centerIn: parent } 
+                
+                function refreshPresets() {
+                    presetView.model = backend.get_presets()
+                }
+                
+                onVisibleChanged: if (visible) refreshPresets()
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 15
+                    
+                    // Toolbar
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+                        Text { 
+                            text: "Generation Presets"
+                            color: Theme.TEXT
+                            font.bold: true
+                            font.pixelSize: 18 
+                        }
+                        Item { Layout.fillWidth: true }
+                        Button {
+                            text: "+ New Preset"
+                            background: Rectangle { 
+                                color: Theme.GREEN
+                                radius: Theme.BORDER_RADIUS 
+                            }
+                            contentItem: Text { 
+                                text: parent.text
+                                color: Theme.BASE
+                                font.bold: true
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter 
+                            }
+                            onClicked: presetDialog.openNew()
+                        }
+                    }
+                    
+                    // Presets Grid
+                    GridView {
+                        id: presetView
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        cellWidth: 300
+                        cellHeight: 160
+                        model: []
+                        
+                        delegate: Item {
+                            width: presetView.cellWidth
+                            height: presetView.cellHeight
+                            
+                            Rectangle {
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                color: Theme.MANTLE
+                                radius: Theme.BORDER_RADIUS
+                                border.color: Theme.SURFACE0
+                                border.width: 1
+                                
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 15
+                                    spacing: 5
+                                    
+                                    RowLayout {
+                                        Text { text: "🎛️"; font.pixelSize: 20 }
+                                        Text { 
+                                            text: modelData.name
+                                            color: Theme.TEXT
+                                            font.bold: true
+                                            font.pixelSize: 16
+                                            Layout.fillWidth: true 
+                                        }
+                                        
+                                        // Delete
+                                        Button {
+                                            text: "✕"
+                                            background: Rectangle { color: "transparent" }
+                                            contentItem: Text { 
+                                                text: parent.text
+                                                color: Theme.RED
+                                                font.bold: true 
+                                            }
+                                            onClicked: {
+                                                if (backend.delete_preset(modelData.id)) tabPresets.refreshPresets()
+                                            }
+                                        }
+                                    }
+                                    
+                                    Rectangle { 
+                                        Layout.fillWidth: true
+                                        height: 1
+                                        color: Theme.SURFACE0
+                                        Layout.bottomMargin: 5 
+                                    }
+                                    
+                                    Text { 
+                                        text: "Model: " + modelData.model.split('/').pop()
+                                        color: Theme.SUBTEXT0
+                                        font.pixelSize: 12
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true 
+                                    }
+                                    Text { 
+                                        text: "LoRA: " + modelData.lora + " (" + modelData.lora_scale + ")"
+                                        color: Theme.SUBTEXT0
+                                        font.pixelSize: 12
+                                        visible: modelData.lora !== "None" 
+                                    }
+                                    Text { 
+                                        text: "Steps: " + modelData.steps + " | CFG: " + modelData.cfg
+                                        color: Theme.SUBTEXT0
+                                        font.pixelSize: 12 
+                                    }
+                                    
+                                    Item { Layout.fillHeight: true }
+                                    
+                                    Button {
+                                        text: "⚡ Apply & Generate"
+                                        Layout.fillWidth: true
+                                        background: Rectangle { 
+                                            color: Theme.BLUE
+                                            radius: 4 
+                                        }
+                                        contentItem: Text { 
+                                            text: parent.text
+                                            color: Theme.BASE
+                                            font.bold: true
+                                            horizontalAlignment: Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter 
+                                        }
+                                        onClicked: {
+                                            root.restoreParameters(
+                                                modelData.prompt_template, modelData.negative_prompt,
+                                                modelData.steps, modelData.cfg, "", // Empty seed = Random
+                                                modelData.model, modelData.lora, modelData.lora_scale
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
             
             // === TAB 3: CHARACTERS ===
@@ -186,7 +354,6 @@ Item {
                     charView.model = backend.get_characters()
                 }
                 
-                // Refresh when tab becomes active
                 onVisibleChanged: if (visible) refreshCharacters()
 
                 ColumnLayout {
@@ -198,13 +365,27 @@ Item {
                         Layout.fillWidth: true
                         spacing: 10
                         
-                        Text { text: "My Characters"; color: Theme.TEXT; font.bold: true; font.pixelSize: 18 }
+                        Text { 
+                            text: "My Characters"
+                            color: Theme.TEXT
+                            font.bold: true
+                            font.pixelSize: 18 
+                        }
                         Item { Layout.fillWidth: true }
                         
                         Button {
                             text: "+ New Character"
-                            background: Rectangle { color: Theme.GREEN; radius: Theme.BORDER_RADIUS }
-                            contentItem: Text { text: parent.text; color: Theme.BASE; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                            background: Rectangle { 
+                                color: Theme.GREEN
+                                radius: Theme.BORDER_RADIUS 
+                            }
+                            contentItem: Text { 
+                                text: parent.text
+                                color: Theme.BASE
+                                font.bold: true
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter 
+                            }
                             onClicked: charDialog.openNew()
                         }
                     }
@@ -238,7 +419,8 @@ Item {
                                     
                                     // Avatar
                                     Rectangle {
-                                        width: 100; height: 100
+                                        width: 100
+                                        height: 100
                                         color: Theme.CRUST
                                         radius: 50
                                         clip: true
@@ -268,30 +450,65 @@ Item {
                                         Layout.fillHeight: true
                                         spacing: 5
                                         
-                                        Text { text: modelData.name; color: Theme.TEXT; font.bold: true; font.pixelSize: 18 }
-                                        Text { text: modelData.description; color: Theme.SUBTEXT0; font.italic: true; elide: Text.ElideRight; Layout.fillWidth: true }
+                                        Text { 
+                                            text: modelData.name
+                                            color: Theme.TEXT
+                                            font.bold: true
+                                            font.pixelSize: 18 
+                                        }
+                                        Text { 
+                                            text: modelData.description
+                                            color: Theme.SUBTEXT0
+                                            font.italic: true
+                                            elide: Text.ElideRight
+                                            Layout.fillWidth: true 
+                                        }
                                         
                                         Item { Layout.fillHeight: true } // Spacer
                                         
-                                        Text { text: "Triggers:"; color: Theme.OVERLAY0; font.pixelSize: 12 }
+                                        Text { 
+                                            text: "Triggers:"
+                                            color: Theme.OVERLAY0
+                                            font.pixelSize: 12 
+                                        }
                                         Text { 
                                             text: modelData.trigger_words
-                                            color: Theme.MAUVE; font.pixelSize: 12
-                                            elide: Text.ElideRight; Layout.fillWidth: true 
+                                            color: Theme.MAUVE
+                                            font.pixelSize: 12
+                                            elide: Text.ElideRight
+                                            Layout.fillWidth: true 
                                         }
                                         
                                         RowLayout {
                                             spacing: 10
                                             Button {
                                                 text: "Edit"
-                                                background: Rectangle { color: Theme.SURFACE0; radius: 4 }
-                                                contentItem: Text { text: parent.text; color: Theme.TEXT; font.pixelSize: 12; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                                background: Rectangle { 
+                                                    color: Theme.SURFACE0
+                                                    radius: 4 
+                                                }
+                                                contentItem: Text { 
+                                                    text: parent.text
+                                                    color: Theme.TEXT
+                                                    font.pixelSize: 12
+                                                    horizontalAlignment: Text.AlignHCenter
+                                                    verticalAlignment: Text.AlignVCenter 
+                                                }
                                                 onClicked: charDialog.openEdit(modelData)
                                             }
                                             Button {
                                                 text: "Delete"
-                                                background: Rectangle { color: Theme.RED; radius: 4 }
-                                                contentItem: Text { text: parent.text; color: "white"; font.pixelSize: 12; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                                background: Rectangle { 
+                                                    color: Theme.RED
+                                                    radius: 4 
+                                                }
+                                                contentItem: Text { 
+                                                    text: parent.text
+                                                    color: "white"
+                                                    font.pixelSize: 12
+                                                    horizontalAlignment: Text.AlignHCenter
+                                                    verticalAlignment: Text.AlignVCenter 
+                                                }
                                                 onClicked: {
                                                     if (backend.delete_character(modelData.id)) tabCharacters.refreshCharacters()
                                                 }
@@ -326,7 +543,12 @@ Item {
             detailPopup.open()
         }
         
-        background: Rectangle { color: Theme.BASE; border.color: Theme.LAVENDER; border.width: 2; radius: 10 }
+        background: Rectangle { 
+            color: Theme.BASE
+            border.color: Theme.LAVENDER
+            border.width: 2
+            radius: 10 
+        }
         
         contentItem: RowLayout {
             anchors.fill: parent
@@ -335,8 +557,12 @@ Item {
             
             Rectangle {
                 id: imageArea
-                Layout.fillWidth: true; Layout.fillHeight: true; Layout.minimumWidth: 400
-                color: "black"; clip: true; radius: 8
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.minimumWidth: 400
+                color: "black"
+                clip: true
+                radius: 8
                 property bool isZoomed: false
 
                 Flickable {
@@ -356,23 +582,62 @@ Item {
                     }
                 }
                 
+                Text {
+                    anchors.centerIn: parent
+                    visible: fullImg.status === Image.Error || fullImg.status === Image.Null
+                    text: "❌ Image Load Error\n" + (detailPopup.currentData ? detailPopup.currentData.path : "No Data")
+                    color: "red"
+                    horizontalAlignment: Text.AlignHCenter
+                }
+
                 Button {
                     id: zoomBtn
-                    anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 15
-                    z: 100; visible: fullImg.status === Image.Ready 
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 15
+                    z: 100
+                    visible: fullImg.status === Image.Ready 
+                    
                     text: imageArea.isZoomed ? "🔄 Fit View" : "🔍 Original Size"
-                    leftPadding: 16; rightPadding: 16; topPadding: 10; bottomPadding: 10
-                    background: Rectangle { color: Theme.MANTLE; radius: Theme.BORDER_RADIUS; border.color: Theme.SURFACE0; border.width: 1; opacity: 0.9 }
-                    contentItem: Text { text: zoomBtn.text; color: Theme.TEXT; font.bold: true; font.pixelSize: 14; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    leftPadding: 16
+                    rightPadding: 16
+                    topPadding: 10
+                    bottomPadding: 10
+                    
+                    background: Rectangle { 
+                        color: Theme.MANTLE
+                        radius: Theme.BORDER_RADIUS
+                        border.color: Theme.SURFACE0
+                        border.width: 1
+                        opacity: 0.9 
+                    }
+                    contentItem: Text { 
+                        text: zoomBtn.text
+                        color: Theme.TEXT
+                        font.bold: true
+                        font.pixelSize: 14
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter 
+                    }
                     onClicked: imageArea.isZoomed = !imageArea.isZoomed
                 }
             }
             
             ColumnLayout {
-                Layout.preferredWidth: 350; Layout.fillHeight: true; spacing: 15
-                Text { text: "Image Details"; color: Theme.LAVENDER; font.bold: true; font.pixelSize: 20 }
+                Layout.preferredWidth: 350
+                Layout.fillHeight: true
+                spacing: 15
+                
+                Text { 
+                    text: "Image Details"
+                    color: Theme.LAVENDER
+                    font.bold: true
+                    font.pixelSize: 20 
+                }
+                
                 ScrollView {
-                    Layout.fillWidth: true; Layout.fillHeight: true
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
                     TextArea {
                         text: detailPopup.currentData ? 
                               "<b>Prompt:</b><br>" + detailPopup.currentData.prompt + "<br><br>" +
@@ -382,35 +647,74 @@ Item {
                               "<b>Steps:</b> " + detailPopup.currentData.steps + " | <b>CFG:</b> " + detailPopup.currentData.cfg + "<br>" +
                               "<b>Size:</b> " + fullImg.sourceSize.width + "x" + fullImg.sourceSize.height
                               : ""
-                        color: Theme.TEXT; textFormat: TextEdit.RichText; readOnly: true; wrapMode: TextEdit.Wrap; background: Rectangle { color: Theme.MANTLE; radius: 8 }
+                        color: Theme.TEXT
+                        textFormat: TextEdit.RichText
+                        readOnly: true
+                        wrapMode: TextEdit.Wrap
+                        background: Rectangle { 
+                            color: Theme.MANTLE
+                            radius: 8 
+                        }
                     }
                 }
+                
                 Button {
                     text: "✨ Use Parameters"
-                    Layout.fillWidth: true; background: Rectangle { color: Theme.MAUVE; radius: 8 }
-                    contentItem: Text { text: parent.text; color: Theme.BASE; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    Layout.fillWidth: true
+                    background: Rectangle { 
+                        color: Theme.MAUVE
+                        radius: 8 
+                    }
+                    contentItem: Text { 
+                        text: parent.text
+                        color: Theme.BASE
+                        font.bold: true
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter 
+                    }
                     onClicked: {
                         var d = detailPopup.currentData
                         root.restoreParameters(d.prompt, d.negative_prompt, parseInt(d.steps), parseFloat(d.cfg), d.seed, d.model, "None", 0.8)
                         detailPopup.close()
                     }
                 }
+                
                 Button {
                     text: "🗑️ Delete Image"
-                    Layout.fillWidth: true; background: Rectangle { color: Theme.RED; radius: 8 }
+                    Layout.fillWidth: true
+                    background: Rectangle { 
+                        color: Theme.RED
+                        radius: 8 
+                    }
                     contentItem: Text { 
                         text: parent.text
-                        color: "white" // FIXED: Separated from font.bold
-                        font.bold: true 
+                        color: "white"
+                        font.bold: true
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter 
                     }
-                    onClicked: { if (backend.delete_image(detailPopup.currentData.path)) { tabGallery.refreshGallery(); detailPopup.close() } }
+                    onClicked: { 
+                        if (backend.delete_image(detailPopup.currentData.path)) { 
+                            tabGallery.refreshGallery()
+                            detailPopup.close() 
+                        } 
+                    }
                 }
+                
                 Button {
                     text: "Close"
-                    Layout.fillWidth: true; onClicked: detailPopup.close(); background: Rectangle { color: Theme.SURFACE0; radius: 8 }
-                    contentItem: Text { text: parent.text; color: Theme.TEXT; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    Layout.fillWidth: true
+                    onClicked: detailPopup.close()
+                    background: Rectangle { 
+                        color: Theme.SURFACE0
+                        radius: 8 
+                    }
+                    contentItem: Text { 
+                        text: parent.text
+                        color: Theme.TEXT
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter 
+                    }
                 }
             }
         }
@@ -441,7 +745,12 @@ Item {
             charDialog.open()
         }
         
-        background: Rectangle { color: Theme.BASE; border.color: Theme.SURFACE0; border.width: 1; radius: 10 }
+        background: Rectangle { 
+            color: Theme.BASE
+            border.color: Theme.SURFACE0
+            border.width: 1
+            radius: 10 
+        }
         
         contentItem: ColumnLayout {
             spacing: 15
@@ -454,34 +763,111 @@ Item {
                 Layout.alignment: Qt.AlignHCenter 
             }
             
-            TextField { id: inpName; placeholderText: "Character Name"; Layout.fillWidth: true; color: Theme.TEXT; background: Rectangle { color: Theme.MANTLE; radius: 4; border.color: Theme.SURFACE0 } }
-            TextField { id: inpDesc; placeholderText: "Short Description"; Layout.fillWidth: true; color: Theme.TEXT; background: Rectangle { color: Theme.MANTLE; radius: 4; border.color: Theme.SURFACE0 } }
-            TextField { id: inpTrigger; placeholderText: "Trigger Words (comma separated)"; Layout.fillWidth: true; color: Theme.TEXT; background: Rectangle { color: Theme.MANTLE; radius: 4; border.color: Theme.SURFACE0 } }
+            TextField { 
+                id: inpName
+                placeholderText: "Character Name"
+                Layout.fillWidth: true
+                color: Theme.TEXT
+                background: Rectangle { 
+                    color: Theme.MANTLE
+                    radius: 4
+                    border.color: Theme.SURFACE0 
+                } 
+            }
+            TextField { 
+                id: inpDesc
+                placeholderText: "Short Description"
+                Layout.fillWidth: true
+                color: Theme.TEXT
+                background: Rectangle { 
+                    color: Theme.MANTLE
+                    radius: 4
+                    border.color: Theme.SURFACE0 
+                } 
+            }
+            TextField { 
+                id: inpTrigger
+                placeholderText: "Trigger Words (comma separated)"
+                Layout.fillWidth: true
+                color: Theme.TEXT
+                background: Rectangle { 
+                    color: Theme.MANTLE
+                    radius: 4
+                    border.color: Theme.SURFACE0 
+                } 
+            }
             
             RowLayout {
-                TextField { id: inpPreview; placeholderText: "Avatar Path (Optional)"; Layout.fillWidth: true; color: Theme.TEXT; background: Rectangle { color: Theme.MANTLE; radius: 4; border.color: Theme.SURFACE0 } }
+                TextField { 
+                    id: inpPreview
+                    placeholderText: "Avatar Path (Optional)"
+                    Layout.fillWidth: true
+                    color: Theme.TEXT
+                    background: Rectangle { 
+                        color: Theme.MANTLE
+                        radius: 4
+                        border.color: Theme.SURFACE0 
+                    } 
+                }
                 Button { 
-                    text: "📁"; width: 40
+                    text: "📁"
+                    width: 40
                     onClicked: fileDialog.open()
-                    background: Rectangle { color: Theme.SURFACE0; radius: 4 }
-                    contentItem: Text { text: parent.text; color: Theme.TEXT; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    background: Rectangle { 
+                        color: Theme.SURFACE0
+                        radius: 4 
+                    }
+                    contentItem: Text { 
+                        text: parent.text
+                        color: Theme.TEXT
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter 
+                    }
                 }
             }
             
-            TextArea { id: inpNotes; placeholderText: "Notes / Backstory..."; Layout.fillWidth: true; Layout.preferredHeight: 100; color: Theme.TEXT; background: Rectangle { color: Theme.MANTLE; radius: 4; border.color: Theme.SURFACE0 } }
+            TextArea { 
+                id: inpNotes
+                placeholderText: "Notes / Backstory..."
+                Layout.fillWidth: true
+                Layout.preferredHeight: 100
+                color: Theme.TEXT
+                background: Rectangle { 
+                    color: Theme.MANTLE
+                    radius: 4
+                    border.color: Theme.SURFACE0 
+                } 
+            }
             
             RowLayout {
                 Layout.alignment: Qt.AlignRight
                 Button { 
                     text: "Cancel"
                     onClicked: charDialog.close()
-                    background: Rectangle { color: Theme.SURFACE0; radius: 4 }
-                    contentItem: Text { text: parent.text; color: Theme.TEXT; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    background: Rectangle { 
+                        color: Theme.SURFACE0
+                        radius: 4 
+                    }
+                    contentItem: Text { 
+                        text: parent.text
+                        color: Theme.TEXT
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter 
+                    }
                 }
                 Button { 
                     text: "Save"
-                    background: Rectangle { color: Theme.GREEN; radius: 4 }
-                    contentItem: Text { text: parent.text; color: Theme.BASE; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    background: Rectangle { 
+                        color: Theme.GREEN
+                        radius: 4 
+                    }
+                    contentItem: Text { 
+                        text: parent.text
+                        color: Theme.BASE
+                        font.bold: true
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter 
+                    }
                     onClicked: {
                         if (charDialog.isEditMode) {
                             backend.update_character(charDialog.editId, inpName.text, inpDesc.text, inpTrigger.text, inpPreview.text, inpNotes.text)
@@ -496,6 +882,166 @@ Item {
         }
     }
     
+    // --- Preset Editor Dialog ---
+    Dialog {
+        id: presetDialog
+        title: "New Preset"
+        anchors.centerIn: parent
+        width: 500
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        
+        function openNew() {
+            inpPName.text = ""
+            inpPSteps.value = 30
+            inpPCfg.value = 7.0
+            inpPPrompt.text = ""
+            inpPNeg.text = ""
+            comboPModel.currentIndex = 0
+            comboPLora.currentIndex = 0
+            presetDialog.open()
+        }
+        
+        background: Rectangle { 
+            color: Theme.BASE
+            border.color: Theme.SURFACE0
+            border.width: 1
+            radius: 10 
+        }
+        
+        contentItem: ColumnLayout {
+            spacing: 15
+            Text { 
+                text: "Create New Preset"
+                color: Theme.LAVENDER
+                font.bold: true
+                font.pixelSize: 20
+                Layout.alignment: Qt.AlignHCenter 
+            }
+            
+            TextField { 
+                id: inpPName
+                placeholderText: "Preset Name (e.g. Cinematic 80s)"
+                Layout.fillWidth: true
+                color: Theme.TEXT
+                background: Rectangle { 
+                    color: Theme.MANTLE
+                    radius: 4
+                    border.color: Theme.SURFACE0 
+                } 
+            }
+            
+            RowLayout {
+                ComboBox { 
+                    id: comboPModel
+                    Layout.fillWidth: true
+                    model: backend.get_models() 
+                    background: Rectangle { 
+                        color: Theme.MANTLE
+                        radius: 4
+                        border.color: Theme.SURFACE0 
+                    }
+                    contentItem: Text { 
+                        text: comboPModel.currentText
+                        color: Theme.TEXT
+                        leftPadding: 10
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight 
+                    }
+                }
+                ComboBox { 
+                    id: comboPLora
+                    Layout.fillWidth: true
+                    model: backend.get_loras()
+                    background: Rectangle { 
+                        color: Theme.MANTLE
+                        radius: 4
+                        border.color: Theme.SURFACE0 
+                    }
+                    contentItem: Text { 
+                        text: comboPLora.currentText
+                        color: Theme.TEXT
+                        leftPadding: 10
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight 
+                    }
+                }
+            }
+            
+            RowLayout {
+                Text { text: "Steps: " + inpPSteps.value; color: Theme.TEXT }
+                Slider { id: inpPSteps; from: 1; to: 100; value: 30; stepSize: 1; Layout.fillWidth: true }
+                Text { text: "CFG: " + inpPCfg.value.toFixed(1); color: Theme.TEXT }
+                Slider { id: inpPCfg; from: 1.0; to: 20.0; value: 7.0; stepSize: 0.5; Layout.fillWidth: true }
+            }
+            
+            TextArea { 
+                id: inpPPrompt
+                placeholderText: "Prompt Template..."
+                Layout.fillWidth: true
+                Layout.preferredHeight: 60
+                color: Theme.TEXT
+                background: Rectangle { 
+                    color: Theme.MANTLE
+                    radius: 4
+                    border.color: Theme.SURFACE0 
+                } 
+            }
+            TextArea { 
+                id: inpPNeg
+                placeholderText: "Negative Prompt..."
+                Layout.fillWidth: true
+                Layout.preferredHeight: 60
+                color: Theme.TEXT
+                background: Rectangle { 
+                    color: Theme.MANTLE
+                    radius: 4
+                    border.color: Theme.SURFACE0 
+                } 
+            }
+            
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                Button { 
+                    text: "Cancel"
+                    onClicked: presetDialog.close()
+                    background: Rectangle { 
+                        color: Theme.SURFACE0
+                        radius: 4 
+                    }
+                    contentItem: Text { 
+                        text: parent.text
+                        color: Theme.TEXT
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter 
+                    }
+                }
+                Button { 
+                    text: "Save"
+                    background: Rectangle { 
+                        color: Theme.GREEN
+                        radius: 4 
+                    }
+                    contentItem: Text { 
+                        text: parent.text
+                        color: Theme.BASE
+                        font.bold: true
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter 
+                    }
+                    onClicked: {
+                        backend.add_preset(
+                            inpPName.text, comboPModel.currentText, comboPLora.currentText, 0.8, 
+                            inpPSteps.value, inpPCfg.value, inpPPrompt.text, inpPNeg.text
+                        )
+                        tabPresets.refreshPresets()
+                        presetDialog.close()
+                    }
+                }
+            }
+        }
+    }
+
     FileDialog {
         id: fileDialog
         title: "Select Avatar Image"
@@ -511,11 +1057,13 @@ Item {
         id: tBtn
         property string iconText: ""
         property bool isActive: false
+        
         background: Rectangle {
             color: tBtn.isActive ? Theme.SURFACE0 : "transparent"
             radius: Theme.BORDER_RADIUS
             border.color: tBtn.isActive ? Theme.MAUVE : "transparent"
         }
+        
         contentItem: Row {
             spacing: 8
             Text {

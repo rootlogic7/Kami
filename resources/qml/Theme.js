@@ -12,6 +12,7 @@ var SURFACE2 = "#585b70";
 var TEXT = "#cdd6f4";
 var SUBTEXT0 = "#a6adc8";
 var SUBTEXT1 = "#bac2de";
+var OVERLAY0 = "#6c7086"; // <--- NEU HINZUGEFÜGT
 
 var BLUE = "#89b4fa";
 var LAVENDER = "#b4befe";
@@ -29,7 +30,7 @@ var FLAMINGO = "#f2cdcd";
 var ROSEWATER = "#f5e0dc";
 
 // --- Font Settings ---
-var FONT_FAMILY = "DepartureMono Nerd Font Propo"; // Ensure this font is installed or fallback
+var FONT_FAMILY = "DepartureMono Nerd Font Propo"; 
 var FONT_SIZE_MAIN = 14;
 var FONT_SIZE_LARGE = 18;
 var FONT_SIZE_HEADER = 24;
