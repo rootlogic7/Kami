@@ -1,14 +1,16 @@
-# Python Virtual Environment
+# --- Python Virtual Environment ---
 venv/
 env/
 .env
 
-# Byte-compiled / optimized / DLL files
-pycache/
+# --- Python Bytecode & Cache ---
+__pycache__/
 *.py[cod]
 *$py.class
+app/__pycache__/
+ui/__pycache__/
 
-# Distribution / Packaging
+# --- Distribution / Packaging ---
 build/
 develop-eggs/
 dist/
@@ -22,42 +24,36 @@ var/
 .installed.cfg
 *.egg
 
-# Hugging Face Cache
+# --- Hugging Face & Models ---
 .cache/
 hf_cache/
-
-# IDE Settings
-.vscode/
-.idea/
-
-# Images
-*.png
-*.jpg
-output/
-output_images/
-temp/
-
-# Logs
-*.log
-*/*.log
-
-# Models: Checkpoints, LoRA
 models/
 models/checkpoints/
 models/loras/
-.safetensors
+*.safetensors
+*.ckpt
 
-# Prompts
+# --- Kami Application Data ---
+output_images/
+library.db
 favorites.json
 iotd_prompts.json
-
-# Configuration & Session
 session_config.json
 app.log
+*.log
 
-# Python Cache
-__pycache__/
-app/__pycache__/
+# --- IDE Settings ---
+.vscode/
+.idea/
+.DS_Store
 
-# db
-library.db
+# --- Frontend (Node.js/React) ---
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
