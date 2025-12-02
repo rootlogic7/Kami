@@ -22,7 +22,7 @@ ApplicationWindow {
 
         // 1. Sidebar Navigation
         Rectangle {
-            Layout.preferredWidth: 250
+            Layout.preferredWidth: 260
             Layout.fillHeight: true
             color: Theme.MANTLE
             
@@ -35,42 +35,62 @@ ApplicationWindow {
                 Text {
                     text: "KAMI"
                     color: Theme.LAVENDER
-                    font.pixelSize: 28
+                    font.pixelSize: 32
                     font.bold: true
+                    font.family: Theme.FONT_FAMILY
                     Layout.alignment: Qt.AlignHCenter
-                    Layout.bottomMargin: 20
+                    Layout.bottomMargin: 30
                 }
 
-                // Nav Buttons (Icon property renamed to iconText)
+                // --- Navigation Menu ---
+                
                 NavButton { 
-                    text: "Generate"
-                    iconText: "✨" 
+                    text: "Home"
+                    iconText: "🏠" 
                     isActive: root.currentViewIndex === 0
                     onClicked: root.currentViewIndex = 0
                 }
                 
                 NavButton { 
-                    text: "Settings" 
-                    iconText: "⚙️"
+                    text: "Generate" 
+                    iconText: "✨"
                     isActive: root.currentViewIndex === 1
                     onClicked: root.currentViewIndex = 1
                 }
 
                 NavButton { 
-                    text: "Gallery" 
-                    iconText: "📂"
+                    text: "Collection" 
+                    iconText: "📚" // Changed from folder to books/library style
                     isActive: root.currentViewIndex === 2
                     onClicked: root.currentViewIndex = 2
                 }
 
+                NavButton { 
+                    text: "Settings" 
+                    iconText: "⚙️"
+                    isActive: root.currentViewIndex === 3
+                    onClicked: root.currentViewIndex = 3
+                }
+
                 Item { Layout.fillHeight: true } // Spacer
 
-                // Status Indicator
-                Text {
-                    text: "System Ready"
-                    color: Theme.GREEN
-                    font.pixelSize: 12
+                // Status Footer
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 1
+                    color: Theme.SURFACE0
+                }
+                
+                RowLayout {
+                    Layout.topMargin: 10
                     Layout.alignment: Qt.AlignHCenter
+                    spacing: 10
+                    
+                    Text {
+                        text: "🟢 System Ready"
+                        color: Theme.GREEN
+                        font.pixelSize: 12
+                    }
                 }
             }
         }
@@ -81,38 +101,24 @@ ApplicationWindow {
             Layout.fillHeight: true
             color: Theme.BASE
             
+            // Defines the view container
             StackLayout {
                 id: contentStack
                 anchors.fill: parent
                 anchors.margins: 20
                 currentIndex: root.currentViewIndex
 
-		// View 0: Generator (Real View)
-                GenerationView {
-                    id: genView
-                }
+                // Index 0: Home
+                HomeView { id: viewHome }
 
-                // View 1: Settings (Placeholder)
-                Rectangle {
-                    color: "transparent"
-                    Text { 
-                        text: "System Configuration" 
-                        color: Theme.TEXT
-                        anchors.centerIn: parent
-                        font.pixelSize: 24
-                    }
-                }
+                // Index 1: Generate (Reuse our existing GenerationView)
+                GenerationView { id: viewGen }
 
-                // View 2: Gallery (Placeholder)
-                Rectangle {
-                    color: "transparent"
-                    Text { 
-                        text: "Image Gallery" 
-                        color: Theme.TEXT
-                        anchors.centerIn: parent
-                        font.pixelSize: 24
-                    }
-                }
+                // Index 2: Collection
+                CollectionView { id: viewCollection }
+                
+                // Index 3: Settings
+                SettingsView { id: viewSettings }
             }
         }
     }
@@ -121,10 +127,10 @@ ApplicationWindow {
     component NavButton: Button {
         id: btn
         property bool isActive: false
-        property string iconText: ""  // RENAMED from 'icon' to 'iconText'
+        property string iconText: ""
         
         Layout.fillWidth: true
-        height: 50
+        height: 54
         
         background: Rectangle {
             color: btn.isActive ? Theme.SURFACE0 : (btn.hovered ? Theme.CRUST : "transparent")
@@ -132,15 +138,15 @@ ApplicationWindow {
             border.width: btn.isActive ? 1 : 0
             border.color: Theme.MAUVE
             
-            // Left active indicator
+            // Active Indicator (Left Bar)
             Rectangle {
                 visible: btn.isActive
                 width: 4
-                height: 20
+                height: 24
                 color: Theme.MAUVE
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
-                anchors.leftMargin: 8
+                anchors.leftMargin: 12
                 radius: 2
             }
         }
@@ -148,20 +154,21 @@ ApplicationWindow {
         contentItem: RowLayout {
             spacing: 15
             Text {
-                text: btn.iconText // Use new property name
-                font.pixelSize: 18
-                Layout.leftMargin: 20
+                text: btn.iconText
+                font.pixelSize: 20
+                Layout.leftMargin: 24
+                color: btn.isActive ? Theme.TEXT : Theme.SUBTEXT1
             }
             Text {
                 text: btn.text
-                color: btn.isActive ? Theme.MAUVE : Theme.SUBTEXT0
+                color: btn.isActive ? Theme.TEXT : Theme.SUBTEXT0
                 font.pixelSize: 16
                 font.bold: btn.isActive
+                font.family: Theme.FONT_FAMILY
                 Layout.fillWidth: true
             }
         }
         
-        // Remove default padding
         leftPadding: 0; rightPadding: 0
         
         MouseArea {
