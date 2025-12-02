@@ -1,160 +1,146 @@
-Kami - Local SDXL Workstation
+# Kami - Local SDXL Workstation
 
 <div align="center">
 
-Kami is a powerful, privacy-focused desktop application for generating images locally using Stable Diffusion XL (SDXL). Built with Python and PyQt6, it provides a modern, responsive GUI for managing prompts, models, and galleries without relying on web browsers or external servers.
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python)
+![PyQt6](https://img.shields.io/badge/GUI-PyQt6-green?style=for-the-badge&logo=qt)
+![License](https://img.shields.io/badge/License-MIT-orange?style=for-the-badge)
+![Style](https://img.shields.io/badge/Theme-Catppuccin_Mocha-pink?style=for-the-badge)
+
+**A powerful, privacy-focused desktop application for generating images locally using Stable Diffusion XL (SDXL).**
+
+Built with Python and PyQt6, Kami provides a modern, responsive interface for managing prompts, models, and galleries without relying on web browsers or external servers.
+
+[Key Features](#-key-features) • [Installation](#-installation) • [Configuration](#-configuration) • [Usage](#-usage) • [Troubleshooting](#-troubleshooting)
 
 </div>
 
-📑 Table of Contents
+---
 
-✨ Key Features
+## ✨ Key Features
 
-🛠️ Prerequisites
+* **🚀 Native Desktop Experience:** Fast and responsive GUI based on PyQt6 (supports Wayland & X11).
+* **🎨 SDXL Powerhouse:** Full support for SDXL Base + Refiner pipelines.
+* **🦄 Pony Diffusion Mode:** Specialized mode for "Pony" based models with automatic score-tag handling (`score_9`, `source_anime`, etc.).
+* **⚡ FreeU Integration:** Integrated U-Net feature re-weighting for enhanced image quality at no extra cost.
+* **📂 Local Gallery:** Built-in SQLite database to browse, filter, and manage your generations efficiently.
+* **💾 Metadata Presets:** Reuse parameters from any generated image with a single click.
+* **🎲 Image of the Day:** Roll the dice to generate random creative prompts based on internal templates.
+* **🖥️ Terminal Integration:** Supports image previews directly in **Kitty** or **Ghostty** terminals.
 
-📦 Installation
+## 🛠️ Prerequisites
 
-⚙️ Configuration & Models
+* **OS:** Linux (Arch Linux recommended, tested on Wayland), Windows, or macOS.
+* **Python:** 3.10 or newer.
+* **GPU:** NVIDIA GPU with at least 8GB VRAM (CUDA support) is highly recommended.
 
-🚀 Usage
+## 📦 Installation
 
-🔧 Troubleshooting
-
-✨ Key Features
-
-🚀 Native Desktop Experience: Fast and responsive GUI based on PyQt6 (supports Wayland & X11).
-
-🎨 SDXL Powerhouse: Full support for SDXL Base + Refiner pipelines.
-
-🦄 Pony Diffusion Mode: Dedicated mode for "Pony" based models with automatic score-tag handling.
-
-🧬 LoRA Support: Easily mix and match Low-Rank Adaptation (LoRA) networks.
-
-⚡ FreeU Integration: Integrated FreeU (U-Net feature re-weighting) for enhanced image quality without extra cost.
-
-📂 Local Gallery: Built-in SQLite database to browse, filter, and manage your generations.
-
-💾 Metadata Presets: Drag-and-drop metadata support – reuse parameters from any generated image.
-
-🎲 Image of the Day: Roll the dice to generate random creative prompts.
-
-🛠️ Prerequisites
-
-OS: Linux (Arch Linux recommended, tested on Wayland), Windows, or macOS.
-
-Python: 3.10 or newer.
-
-GPU: NVIDIA GPU with at least 8GB VRAM recommended (CUDA support).
-
-📦 Installation
-
-1. Clone the Repository
-
+### 1. Clone the Repository
+```bash
 git clone git@github.com:rootlogic7/Kami.git
 cd Kami
-
 
 2. Set up Virtual Environment
 
 It is highly recommended to use a virtual environment to manage dependencies.
 
-# Create venv
-python -m venv venv
+Linux / macOS:
+Bash
 
-# Activate venv (Linux/Bash)
+python -m venv venv
 source venv/bin/activate
 
-# Activate venv (Windows PowerShell)
-# .\venv\Scripts\Activate.ps1
+Windows:
+PowerShell
 
+python -m venv venv
+.\venv\Scripts\Activate.ps1
 
 3. Install Dependencies
 
-Install the required Python packages, including diffusers, torch, and PyQt6.
+Install the required Python packages (Diffusers, Torch, PyQt6, etc.).
+Bash
 
 pip install -r requirements.txt
 
+⚙️ Configuration
 
-⚙️ Configuration & Models
+Kami expects a specific folder structure for your models.
+1. Directory Structure
 
-Kami expects a specific folder structure for your models. You can download models from Civitai or Hugging Face.
+Create the following folders inside the root directory:
+Plaintext
 
-1. Create Model Directories
+Kami/
+├── models/
+│   ├── checkpoints/   <-- Place .safetensors (SDXL Base, Pony, etc.) here
+│   └── loras/         <-- Place .safetensors (LoRA files) here
+├── output_images/     <-- Generated images will appear here
+└── styles.json        <-- Custom style presets
 
-The application looks for models in the models/ directory.
+2. Adding Models
 
-mkdir -p models/checkpoints
-mkdir -p models/loras
+    Checkpoints: Download SDXL models (e.g., JuggernautXL, PonyDiffusionV6) and place them in models/checkpoints/.
 
+    LoRAs: Place Low-Rank Adaptation files in models/loras/.
 
-2. Add Your Models
+3. Custom Styles
 
-Checkpoints (.safetensors): Place your main SDXL model files (e.g., JuggernautXL.safetensors, PonyDiffusionV6.safetensors) into models/checkpoints/.
-
-LoRAs (.safetensors): Place your LoRA files into models/loras/.
-
-3. Styles (Optional)
-
-You can customize the available styles in styles.json. The app comes with defaults (Anime, Cinematic, Photographic, etc.), but you can add your own JSON entries there.
-
+You can edit styles.json to add your own prompt templates. The app comes with defaults like Anime, Cinematic, and Photographic.
 🚀 Usage
+Graphical Interface (GUI)
 
-Starting the Application
+The recommended way to use Kami.
 
-For Linux users, a convenient startup script is provided that handles environment activation and GPU memory allocation settings.
+Linux (using startup script): The start.sh script handles environment activation and memory optimizations.
+Bash
 
-# Make sure it is executable
 chmod +x start.sh
-
-# Run the app
 ./start.sh
 
+Manual Start:
+Bash
 
-Alternatively, you can run the Python script directly (ensure your venv is active):
-
+# Ensure venv is active
 python gui.py
 
+Command Line Interface (CLI)
 
-GUI Overview
+You can also generate images directly from the terminal without the GUI.
+Bash
 
-Tab
+python main_cli.py "A cyberpunk city in rain, neon lights" --model "models/checkpoints/my_model.safetensors" --steps 30 --guidance 7.0
 
-Description
+CLI Arguments:
 
-Generate
+    prompt: The text prompt (required).
 
-Enter prompts (Positive/Negative), adjust Steps & CFG, and generate images.
+    --neg: Negative prompt.
 
-Settings
+    --steps: Denoising steps (default: 30).
 
-Select Checkpoints, Refiners, and LoRAs. Enable Pony Mode or FreeU.
+    --guidance: CFG Scale (default: 7.0).
 
-Gallery
+    --lora: Path to a LoRA file.
 
-Browse history, filter by model/date, and reuse parameters from previous images.
-
-Favorites
-
-Save and manage your best prompts for quick access.
+    --refiner: Enable the SDXL Refiner.
 
 🔧 Troubleshooting
+Issue	Solution
+Wayland Crashes	
 
-"Wayland" errors on startup
+If you experience crashes on Linux/Wayland, try forcing XCB:
 
-If you experience crashes on Linux/Wayland, try forcing the XCB platform plugin:
+export QT_QPA_PLATFORM=xcb && python gui.py
+CUDA OOM	
 
-export QT_QPA_PLATFORM=xcb
-python gui.py
+1. Disable the Refiner.
 
+2. Kami attempts to offload to CPU automatically.
 
-Out of Memory (CUDA OOM)
-
-Disable the Refiner if currently enabled.
-
-Kami automatically attempts to offload models to CPU when not in use.
-
-Use the "Unload Models" button in the Settings tab to forcefully free VRAM.
-
+3. Use smaller resolutions if possible.
+Missing Models	Ensure your .safetensors files are strictly in models/checkpoints or models/loras and restart the app.
 📜 License
 
-This project is intended for personal use.
+This project is intended for personal use. See the source code headers for library licenses (Diffusers, PyQt6, etc.).
