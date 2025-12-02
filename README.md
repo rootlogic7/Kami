@@ -61,7 +61,7 @@ python -m venv venv
 .\venv\Scripts\Activate.ps1
 ```
 
-3. Install Dependencies
+### 3. Install Dependencies
 
 Install the required Python packages (Diffusers, Torch, PyQt6, etc.).
 
@@ -72,7 +72,7 @@ pip install -r requirements.txt
 ## ⚙️ Configuration
 
 Kami expects a specific folder structure for your models.
-1. Directory Structure
+### 1. Directory Structure
 
 Create the following folders inside the root directory:
 Plaintext
@@ -89,13 +89,13 @@ Kami/
 
 └── styles.json        <-- Custom style presets
 
-2. Adding Models
+### 2. Adding Models
 
     Checkpoints: Download SDXL models (e.g., JuggernautXL, PonyDiffusionV6) and place them in models/checkpoints/.
 
     LoRAs: Place Low-Rank Adaptation files in models/loras/.
 
-3. Custom Styles
+### 3. Custom Styles
 
 You can edit styles.json to add your own prompt templates. The app comes with defaults like Anime, Cinematic, and Photographic.
 
@@ -104,34 +104,26 @@ Graphical Interface (GUI)
 
 The recommended way to use Kami.
 
-Linux (using startup script): The start.sh script handles environment activation and memory optimizations.
-Bash
-
-```
+### Linux (using startup script): The start.sh script handles environment activation and memory optimizations.
+```bash
 chmod +x start.sh
 ./start.sh
 ```
 
-Manual Start:
-Bash
-
-```
+### Manual Start:
+```bash
 # Ensure venv is active
 python gui.py
 ```
 
-Command Line Interface (CLI)
-
+### Command Line Interface (CLI)
 You can also generate images directly from the terminal without the GUI.
-Bash
-
-```
+```bash
 python main_cli.py "A cyberpunk city in rain, neon lights" --model "models/checkpoints/my_model.safetensors" --steps 30 --guidance 7.0
 ```
 
 CLI Arguments:
-
-```
+```bash
     prompt: The text prompt (required).
 
     --neg: Negative prompt.
