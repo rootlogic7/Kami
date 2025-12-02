@@ -1,6 +1,24 @@
 Kami - Local SDXL Workstation
 
+<div align="center">
+
 Kami is a powerful, privacy-focused desktop application for generating images locally using Stable Diffusion XL (SDXL). Built with Python and PyQt6, it provides a modern, responsive GUI for managing prompts, models, and galleries without relying on web browsers or external servers.
+
+</div>
+
+📑 Table of Contents
+
+✨ Key Features
+
+🛠️ Prerequisites
+
+📦 Installation
+
+⚙️ Configuration & Models
+
+🚀 Usage
+
+🔧 Troubleshooting
 
 ✨ Key Features
 
@@ -99,50 +117,43 @@ python gui.py
 
 GUI Overview
 
-Generate Tab:
+Tab
 
-Enter your Positive and Negative prompts.
+Description
 
-Adjust Steps (default: 30) and CFG Scale (guidance).
+Generate
 
-Hit GENERATE IMAGE.
+Enter prompts (Positive/Negative), adjust Steps & CFG, and generate images.
 
-Settings Tab:
+Settings
 
-Checkpoint: Select your base model from the dropdown.
+Select Checkpoints, Refiners, and LoRAs. Enable Pony Mode or FreeU.
 
-Refiner: Enable the SDXL Refiner for high-fidelity details.
+Gallery
 
-LoRA: Select a LoRA network and adjust its strength.
+Browse history, filter by model/date, and reuse parameters from previous images.
 
-Advanced: Toggle Pony Mode (adds score tags automatically) or FreeU.
+Favorites
 
-Gallery Tab:
-
-Browse your history.
-
-Filter by model, date, or search for prompt keywords.
-
-Right-click or use buttons to Delete images or Use Parameters to regenerate.
-
-Favorites:
-
-Save your best prompts for quick access later.
+Save and manage your best prompts for quick access.
 
 🔧 Troubleshooting
 
-Issue: "Wayland" errors on startup
-If you experience crashes on Linux/Wayland, try forcing the XCB platform plugin in start.sh or your terminal:
+"Wayland" errors on startup
+
+If you experience crashes on Linux/Wayland, try forcing the XCB platform plugin:
 
 export QT_QPA_PLATFORM=xcb
 python gui.py
 
 
-Issue: Out of Memory (CUDA OOM)
+Out of Memory (CUDA OOM)
 
-Try disabling the Refiner.
+Disable the Refiner if currently enabled.
 
-Kami automatically attempts to offload models to CPU when not in use, but you can use the "Unload Models" button in the Settings tab to forcefully free VRAM.
+Kami automatically attempts to offload models to CPU when not in use.
+
+Use the "Unload Models" button in the Settings tab to forcefully free VRAM.
 
 📜 License
 
