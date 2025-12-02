@@ -115,8 +115,17 @@ ApplicationWindow {
                 GenerationView { id: viewGen }
 
                 // Index 2: Collection
-                CollectionView { id: viewCollection }
-                
+                CollectionView { 
+                    id: viewCollection 
+                    
+                    onRestoreParameters: (prompt, neg, steps, cfg, seed, model, lora, loraScale) => {
+                        console.log("Restoring params for: " + prompt)
+                        // 1. Switch to Generate View
+                        root.currentViewIndex = 1
+                        // 2. Set Params
+                        viewGen.setParameters(prompt, neg, steps, cfg, seed, model, lora, loraScale)
+                    }
+                }
                 // Index 3: Settings
                 SettingsView { id: viewSettings }
             }

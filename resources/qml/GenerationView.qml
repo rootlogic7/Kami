@@ -9,12 +9,52 @@ Item {
     // --- Internal State ---
     property string lastImagePath: ""
     
+    // --- Data Loading ---
+    function loadDefaults() {
+        var cfg = backend.get_config()
+        
+        // Apply global defaults if no manual overrides exist yet
+        // (We could add logic to only overwrite if untouched, but simple reset is standard behavior)
+        sliderSteps.value = cfg.steps
+        sliderCfg.value = cfg.guidance
+        txtNeg.text = cfg.neg_prompt
+        chkRefiner.checked = cfg.use_refiner
+        
+        // Load Models (existing logic)
+        comboModel.model = backend.get_models()
+        comboModel.currentIndex = comboModel.find(cfg.model_path) !== -1 ? comboModel.find(cfg.model_path) : 0
+        
+        comboLora.model = backend.get_loras()
+        
+        console.log("Generation defaults loaded from config.")
+    }
+
+    Component.onCompleted: loadDefaults()
+    
     // --- Signal Connections ---
     Connections {
         target: backend
         function onGenerationFinished(path) {
             console.log("View received image: " + path)
             root.lastImagePath = "file://" + path 
+        }
+    }
+    
+    // Function to load parameters from external source (Gallery)
+    function setParameters(prompt, neg, steps, cfg, seed, model, lora, loraScale) {
+        txtPrompt.text = prompt
+        txtNeg.text = neg
+        sliderSteps.value = steps
+        sliderCfg.value = cfg
+        txtSeed.text = seed
+        
+        var modelIdx = comboModel.find(model)
+        if (modelIdx !== -1) comboModel.currentIndex = modelIdx
+        
+        if (lora && lora !== "None") {
+            var loraIdx = comboLora.find(lora)
+            if (loraIdx !== -1) comboLora.currentIndex = loraIdx
+            sliderLoraScale.value = loraScale
         }
     }
 
@@ -37,63 +77,29 @@ Item {
                     width: parent.width
                     spacing: 15
                     
-                    // --- Model Selection Section ---
+                    // --- Model Selection ---
                     Text { text: "Base Model"; color: Theme.TEXT; font.bold: true }
                     ComboBox {
                         id: comboModel
                         Layout.fillWidth: true
-                        model: [] // Populated dynamically
-                        
-                        background: Rectangle {
-                            color: Theme.MANTLE
-                            border.color: Theme.SURFACE0
-                            radius: Theme.BORDER_RADIUS
-                        }
-                        contentItem: Text {
-                            leftPadding: 10
-                            text: comboModel.currentText
-                            color: Theme.TEXT
-                            verticalAlignment: Text.AlignVCenter
-                            elide: Text.ElideRight
-                        }
-                        
-                        Component.onCompleted: {
-                            comboModel.model = backend.get_models()
-                            comboModel.currentIndex = 0
-                        }
+                        model: [] 
+                        background: Rectangle { color: Theme.MANTLE; border.color: Theme.SURFACE0; radius: Theme.BORDER_RADIUS }
+                        contentItem: Text { leftPadding: 10; text: comboModel.currentText; color: Theme.TEXT; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
                     }
 
                     Text { text: "LoRA Network"; color: Theme.TEXT; font.bold: true }
                     ComboBox {
                         id: comboLora
                         Layout.fillWidth: true
-                        model: [] // Populated dynamically
-                        
-                        background: Rectangle {
-                            color: Theme.MANTLE
-                            border.color: Theme.SURFACE0
-                            radius: Theme.BORDER_RADIUS
-                        }
-                        contentItem: Text {
-                            leftPadding: 10
-                            text: comboLora.currentText
-                            color: Theme.TEXT
-                            verticalAlignment: Text.AlignVCenter
-                            elide: Text.ElideRight
-                        }
-                        
-                        Component.onCompleted: {
-                            comboLora.model = backend.get_loras()
-                            comboLora.currentIndex = 0
-                        }
+                        model: [] 
+                        background: Rectangle { color: Theme.MANTLE; border.color: Theme.SURFACE0; radius: Theme.BORDER_RADIUS }
+                        contentItem: Text { leftPadding: 10; text: comboLora.currentText; color: Theme.TEXT; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
                     }
                     
-                    // LoRA Scale Slider (Only visible if LoRA is selected)
                     ColumnLayout {
                         visible: comboLora.currentText !== "None"
                         Layout.fillWidth: true
                         spacing: 5
-                        
                         RowLayout {
                             Text { text: "LoRA Strength: " + sliderLoraScale.value.toFixed(1); color: Theme.TEXT }
                             Layout.fillWidth: true
@@ -106,9 +112,9 @@ Item {
                         }
                     }
 
-                    // --- Prompt Section ---
-                    Item { height: 10 } // Spacer
+                    Item { height: 10 } 
                     
+                    // --- Prompt ---
                     Text { text: "Prompt"; color: Theme.TEXT; font.bold: true }
                     TextArea {
                         id: txtPrompt
@@ -116,11 +122,7 @@ Item {
                         Layout.preferredHeight: 100
                         placeholderText: "A majestic lion in the sunset..."
                         wrapMode: TextEdit.Wrap
-                        background: Rectangle {
-                            color: Theme.MANTLE
-                            border.color: Theme.SURFACE0
-                            radius: Theme.BORDER_RADIUS
-                        }
+                        background: Rectangle { color: Theme.MANTLE; border.color: Theme.SURFACE0; radius: Theme.BORDER_RADIUS }
                         color: Theme.TEXT
                         font.pixelSize: 14
                     }
@@ -132,25 +134,21 @@ Item {
                         Layout.preferredHeight: 60
                         placeholderText: "ugly, blurry, low quality..."
                         wrapMode: TextEdit.Wrap
-                        background: Rectangle {
-                            color: Theme.MANTLE
-                            border.color: Theme.SURFACE0
-                            radius: Theme.BORDER_RADIUS
-                        }
+                        background: Rectangle { color: Theme.MANTLE; border.color: Theme.SURFACE0; radius: Theme.BORDER_RADIUS }
                         color: Theme.TEXT
                         font.pixelSize: 14
                     }
                     
-                    // --- Settings Section ---
                     Item { height: 10 } 
                     
+                    // --- Params ---
                     RowLayout {
                         Text { text: "Steps: " + sliderSteps.value; color: Theme.TEXT }
                         Layout.fillWidth: true
                     }
                     Slider {
                         id: sliderSteps
-                        from: 1; to: 50; stepSize: 1
+                        from: 1; to: 100; stepSize: 1
                         value: 30
                         Layout.fillWidth: true
                     }
@@ -171,27 +169,17 @@ Item {
                         id: txtSeed
                         Layout.fillWidth: true
                         placeholderText: "123456789"
-                        background: Rectangle {
-                            color: Theme.MANTLE
-                            border.color: Theme.SURFACE0
-                            radius: Theme.BORDER_RADIUS
-                        }
+                        background: Rectangle { color: Theme.MANTLE; border.color: Theme.SURFACE0; radius: Theme.BORDER_RADIUS }
                         color: Theme.TEXT
                     }
                     
                     CheckBox {
                         id: chkRefiner
                         text: "Enable Refiner Pipeline"
-                        contentItem: Text {
-                            text: parent.text
-                            font: parent.font
-                            color: Theme.TEXT
-                            leftPadding: parent.indicator.width + parent.spacing
-                            verticalAlignment: Text.AlignVCenter
-                        }
+                        contentItem: Text { text: parent.text; font: parent.font; color: Theme.TEXT; leftPadding: parent.indicator.width + parent.spacing; verticalAlignment: Text.AlignVCenter }
                     }
                     
-                    Item { Layout.fillHeight: true } // Spacer
+                    Item { Layout.fillHeight: true } 
                     
                     Button {
                         text: "GENERATE"
@@ -213,7 +201,6 @@ Item {
                         }
                         
                         onClicked: {
-                            // Call updated backend method with all 9 arguments
                             backend.generate(
                                 txtPrompt.text,
                                 txtNeg.text,
