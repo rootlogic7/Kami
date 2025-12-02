@@ -81,13 +81,13 @@ Kami/
 
 ├── models/
 
-│   ├── checkpoints/   <-- Place .safetensors (SDXL Base, Pony, etc.) here
+│      ├── checkpoints/   <-- Place .safetensors (SDXL Base, Pony, etc.) here
 
-│   └── loras/         <-- Place .safetensors (LoRA files) here
+│      └── loras/         <-- Place .safetensors (LoRA files) here
 
-├── output_images/     <-- Generated images will appear here
+├   ── output_images/     <-- Generated images will appear here
 
-└── styles.json        <-- Custom style presets
+└   ── styles.json        <-- Custom style presets
 
 2. Adding Models
 
