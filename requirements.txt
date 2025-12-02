@@ -6,7 +6,6 @@ pillow
 argparse
 peft
 compel>=2.0.0
-PyQt6
-qtawesome
+PySide6
 fastapi
 uvicorn
