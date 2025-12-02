@@ -40,8 +40,9 @@ Built with Python and PyQt6, Kami provides a modern, responsive interface for ma
 ```bash
 git clone git@github.com:rootlogic7/Kami.git
 cd Kami
+```
 
-2. Set up Virtual Environment
+### 2. Set up Virtual Environment
 
 It is highly recommended to use a virtual environment to manage dependencies.
 
