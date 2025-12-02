@@ -37,7 +37,8 @@ Built with Python and PyQt6, Kami provides a modern, responsive interface for ma
 ## 📦 Installation
 
 ### 1. Clone the Repository
-```bash
+
+```
 git clone git@github.com:rootlogic7/Kami.git
 cd Kami
 ```
@@ -47,25 +48,28 @@ cd Kami
 It is highly recommended to use a virtual environment to manage dependencies.
 
 Linux / macOS:
-Bash
 
+```
 python -m venv venv
 source venv/bin/activate
+```
 
 Windows:
-PowerShell
 
+```
 python -m venv venv
 .\venv\Scripts\Activate.ps1
+```
 
 3. Install Dependencies
 
 Install the required Python packages (Diffusers, Torch, PyQt6, etc.).
-Bash
 
+```
 pip install -r requirements.txt
+```
 
-⚙️ Configuration
+## ⚙️ Configuration
 
 Kami expects a specific folder structure for your models.
 1. Directory Structure
@@ -89,7 +93,8 @@ Kami/
 3. Custom Styles
 
 You can edit styles.json to add your own prompt templates. The app comes with defaults like Anime, Cinematic, and Photographic.
-🚀 Usage
+
+## 🚀 Usage
 Graphical Interface (GUI)
 
 The recommended way to use Kami.
@@ -97,24 +102,31 @@ The recommended way to use Kami.
 Linux (using startup script): The start.sh script handles environment activation and memory optimizations.
 Bash
 
+```
 chmod +x start.sh
 ./start.sh
+```
 
 Manual Start:
 Bash
 
+```
 # Ensure venv is active
 python gui.py
+```
 
 Command Line Interface (CLI)
 
 You can also generate images directly from the terminal without the GUI.
 Bash
 
+```
 python main_cli.py "A cyberpunk city in rain, neon lights" --model "models/checkpoints/my_model.safetensors" --steps 30 --guidance 7.0
+```
 
 CLI Arguments:
 
+```
     prompt: The text prompt (required).
 
     --neg: Negative prompt.
@@ -126,15 +138,18 @@ CLI Arguments:
     --lora: Path to a LoRA file.
 
     --refiner: Enable the SDXL Refiner.
+```
 
-🔧 Troubleshooting
+## 🔧 Troubleshooting
 Issue	Solution
 Wayland Crashes	
 
 If you experience crashes on Linux/Wayland, try forcing XCB:
 
+```
 export QT_QPA_PLATFORM=xcb && python gui.py
 CUDA OOM	
+```
 
 1. Disable the Refiner.
 
@@ -142,6 +157,7 @@ CUDA OOM
 
 3. Use smaller resolutions if possible.
 Missing Models	Ensure your .safetensors files are strictly in models/checkpoints or models/loras and restart the app.
-📜 License
+
+## 📜 License
 
 This project is intended for personal use. See the source code headers for library licenses (Diffusers, PyQt6, etc.).
