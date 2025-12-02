@@ -157,7 +157,7 @@ class T2IEngine:
         filename = f"{time_str}_{name}{suffix}.png"
         output_dir = os.path.join("output_images", date_str)
         os.makedirs(output_dir, exist_ok=True)
-        return os.path.join(output_dir, filename)
+        return os.path.abspath(os.path.join(output_dir, filename))
 
     def _save_image(self, 
                     image: Image.Image, 
