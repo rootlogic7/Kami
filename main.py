@@ -12,9 +12,15 @@ from PySide6.QtCore import QObject, Slot, Signal, QUrl
 from app.engine import T2IEngine
 from app.server import start_server_thread
 from app.utils import get_file_list
-from app.database import get_filtered_images, delete_image_record, get_all_models
 from app.config import SessionConfig
 import app.server as server_module
+
+# Import all database functions
+from app.database import (
+    get_filtered_images, delete_image_record, get_all_models,
+    add_character, get_characters, delete_character, update_character,
+    add_preset, get_presets, delete_preset
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -51,14 +57,12 @@ class KamiBridge(QObject):
             "use_refiner": self.config.use_refiner,
             "pony_mode": self.config.pony_mode,
             "use_freeu": self.config.use_freeu,
-            # We can add more fields here as needed
         }
 
     @Slot(str, "QVariant")
     def set_config_value(self, key: str, value):
         """Updates a single configuration value and persists it to disk."""
         if hasattr(self.config, key):
-            # Logging specific changes for debugging
             logger.info(f"Updating config: {key} = {value}")
             setattr(self.config, key, value)
             self.config.save_session_state()
@@ -69,14 +73,14 @@ class KamiBridge(QObject):
 
     @Slot(result=list)
     def get_models(self):
-        """Returns a list of available checkpoint models found in models/checkpoints."""
+        """Returns a list of available checkpoint models."""
         checkpoints_dir = "models/checkpoints"
         models = get_file_list(checkpoints_dir)
         return ["stabilityai/stable-diffusion-xl-base-1.0"] + models
 
     @Slot(result=list)
     def get_loras(self):
-        """Returns a list of available LoRA models found in models/loras."""
+        """Returns a list of available LoRA models."""
         loras_dir = "models/loras"
         loras = get_file_list(loras_dir)
         return ["None"] + loras
@@ -85,13 +89,9 @@ class KamiBridge(QObject):
 
     @Slot(str, str, str, int, int, result=list)
     def get_gallery_images(self, search_text: str, sort_by: str, model_filter: str, limit: int, offset: int):
-        """
-        Retrieves a paginated list of images from the DB based on filters.
-        Returns a list of dictionaries (compatible with QML ListModel).
-        """
+        """Retrieves a paginated list of images from the DB."""
         try:
             rows = get_filtered_images(search_text, sort_by, model_filter)
-            
             # Slicing for pagination
             start = offset
             end = offset + limit
@@ -103,7 +103,6 @@ class KamiBridge(QObject):
                 if not os.path.isabs(data['path']):
                     data['path'] = os.path.abspath(data['path'])
                 results.append(data)
-                
             return results
         except Exception as e:
             logger.error(f"Error fetching gallery images: {e}")
@@ -127,16 +126,52 @@ class KamiBridge(QObject):
             logger.error(f"Failed to delete image {path}: {e}")
             return False
 
+    # --- Character Registry ---
+
+    @Slot(result=list)
+    def get_characters(self):
+        """Returns all characters from the database."""
+        return get_characters()
+
+    @Slot(str, str, str, str, str, result=bool)
+    def add_character(self, name: str, description: str, trigger_words: str, preview_path: str, notes: str):
+        """Adds a new character."""
+        return add_character(name, description, trigger_words, preview_path, notes)
+
+    @Slot(int, str, str, str, str, str, result=bool)
+    def update_character(self, char_id: int, name: str, description: str, trigger_words: str, preview_path: str, notes: str):
+        """Updates an existing character."""
+        return update_character(char_id, name, description, trigger_words, preview_path, notes)
+
+    @Slot(int, result=bool)
+    def delete_character(self, char_id: int):
+        """Deletes a character by ID."""
+        return delete_character(char_id)
+
+    # --- Generation Presets ---
+
+    @Slot(result=list)
+    def get_presets(self):
+        """Returns all presets from the database."""
+        return get_presets()
+
+    @Slot(str, str, str, float, int, float, str, str, result=bool)
+    def add_preset(self, name: str, model: str, lora: str, lora_scale: float, steps: int, cfg: float, prompt: str, neg: str):
+        """Adds a new generation preset."""
+        return add_preset(name, model, lora, lora_scale, steps, cfg, prompt, neg)
+
+    @Slot(int, result=bool)
+    def delete_preset(self, preset_id: int):
+        """Deletes a preset by ID."""
+        return delete_preset(preset_id)
+
     # --- Generation ---
 
     @Slot(str, str, int, float, str, bool, str, str, float)
     def generate(self, prompt: str, neg_prompt: str, steps: int, cfg: float, seed_str: str, 
                  use_refiner: bool, model_name: str, lora_name: str, lora_scale: float):
-        """
-        Main generation slot called from QML.
-        """
+        """Main generation slot called from QML."""
         logger.info(f"UI requested generation: '{prompt[:30]}...'")
-        
         self.statusUpdated.emit("Starting generation...")
         
         # 1. Resolve Model Path
@@ -157,7 +192,7 @@ class KamiBridge(QObject):
             except ValueError:
                 logger.warning(f"Invalid seed '{seed_str}', using random.")
         
-        # 4. Check for Pony Mode (Inject prefixes if enabled)
+        # 4. Check for Pony Mode
         final_prompt = prompt
         final_neg = neg_prompt
         
@@ -172,6 +207,7 @@ class KamiBridge(QObject):
         
         def run_job():
             try:
+                # Handle Model Switching
                 if self.engine.base_model_id != real_model_path:
                     logger.info(f"Switching model from '{self.engine.base_model_id}' to '{real_model_path}'")
                     self.engine.base_model_id = real_model_path
@@ -227,7 +263,6 @@ def main():
     # 5. Setup QML Engine
     qml_engine = QQmlApplicationEngine()
     
-    # Pass config to bridge
     bridge = KamiBridge(engine, config)
     qml_engine.rootContext().setContextProperty("backend", bridge)
 
