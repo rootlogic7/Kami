@@ -1,6 +1,7 @@
 import torch
 from diffusers import (
     StableDiffusionXLPipeline, 
+    StableDiffusionXLImg2ImgPipeline, 
     AutoencoderKL,
     DPMSolverMultistepScheduler
 )
@@ -13,12 +14,16 @@ import re
 import logging
 import threading
 from datetime import datetime
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any, Union, Callable
 
 # Import Database Function
 from app.database import add_image_record, init_db
 
 logger = logging.getLogger(__name__)
+
+class GenerationCancelled(Exception):
+    """Custom exception to handle generation cancellation."""
+    pass
 
 class T2IEngine:
     """
@@ -39,34 +44,24 @@ class T2IEngine:
         self.refiner_pipeline: Optional[StableDiffusionXLImg2ImgPipeline] = None
         self.vae: Optional[AutoencoderKL] = None
         
-        # Mutex lock to prevent concurrent generations from multiple clients
+        # Mutex lock & Cancel Event
         self.lock = threading.Lock()
+        self.abort_event = threading.Event()
         
         # Ensure DB exists
         init_db()
         
     def _load_vae(self) -> AutoencoderKL:
-        """Loads the VAE model if not already loaded."""
-        if self.vae is not None: 
-            return self.vae
-            
+        if self.vae is not None: return self.vae
         logger.info("Loading VAE (fp16-fix)...")
         try:
-            self.vae = AutoencoderKL.from_pretrained(
-                "madebyollin/sdxl-vae-fp16-fix", 
-                torch_dtype=torch.float16
-            )
+            self.vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16)
             return self.vae
         except Exception as e:
             logger.error(f"Failed to load VAE: {e}")
             raise
 
     def load_base_model(self, lora_path: Optional[str] = None) -> None:
-        """
-        Loads the base SDXL model and optionally applies a LoRA.
-        Reloads the pipeline if the LoRA configuration changes.
-        """
-        # Check if reload is needed based on LoRA presence or change
         if self.base_pipeline is not None:
             has_lora_loaded = getattr(self.base_pipeline, "has_lora", False)
             lora_needs_reload = (lora_path and not has_lora_loaded) or \
@@ -90,25 +85,16 @@ class T2IEngine:
                     self.base_model_id, vae=vae, torch_dtype=torch.float16, variant="fp16", use_safetensors=True
                 )
             
-            # Configure Scheduler
             self.base_pipeline.scheduler = DPMSolverMultistepScheduler.from_config(
                 self.base_pipeline.scheduler.config, use_karras_sigmas=True, algorithm_type="dpmsolver++"
             )
-            
-            # Memory optimizations
             self.base_pipeline.enable_vae_tiling()
             self.base_pipeline.enable_vae_slicing()
-            
             if torch.cuda.is_available():
-                try: 
-                    self.base_pipeline.enable_xformers_memory_efficient_attention()
-                except Exception: 
-                    logger.warning("xformers not available, using attention slicing.")
-                    self.base_pipeline.enable_attention_slicing()
-
+                try: self.base_pipeline.enable_xformers_memory_efficient_attention()
+                except Exception: self.base_pipeline.enable_attention_slicing()
             self.base_pipeline.enable_model_cpu_offload()
             
-            # LoRA Handling
             self.base_pipeline.has_lora = False
             if lora_path and os.path.exists(lora_path):
                 logger.info(f"Loading LoRA weights from: {lora_path}")
@@ -120,9 +106,7 @@ class T2IEngine:
             raise
 
     def load_refiner_model(self) -> None:
-        """Loads the SDXL Refiner model if not already loaded."""
         if self.refiner_pipeline: return
-        
         logger.info(f"Loading Refiner: {self.refiner_model_id}")
         try:
             vae = self._load_vae()
@@ -137,39 +121,28 @@ class T2IEngine:
             raise
 
     def _sanitize_prompt(self, prompt: str, max_len: int = 120) -> str:
-        """Sanitizes the prompt text for use in filenames."""
         clean = re.sub(r'\b(score|source|rating)_\w+', '', prompt, flags=re.IGNORECASE)
         clean = re.sub(r'\b(masterpiece|best quality)\b', '', clean, flags=re.IGNORECASE)
         sanitized = re.sub(r'[^a-zA-Z0-9]+', '_', clean).strip('_').lower()
         return sanitized[:max_len].rstrip('_') if sanitized else "image"
 
     def _create_output_path(self, prompt: str, use_refiner: bool, lora_path: Optional[str] = None) -> str:
-        """Generates a unique file path for the output image."""
         name = self._sanitize_prompt(prompt)
         now = datetime.now()
         date_str = now.strftime("%Y%m%d")
         time_str = now.strftime("%H%M%S")
-        
         suffix = ""
         if lora_path: suffix += "_lora"
         if use_refiner: suffix += "_refiner"
-        
         filename = f"{time_str}_{name}{suffix}.png"
         output_dir = os.path.join("output_images", date_str)
         os.makedirs(output_dir, exist_ok=True)
+        # Return absolute path for UI compatibility
         return os.path.abspath(os.path.join(output_dir, filename))
 
-    def _save_image(self, 
-                    image: Image.Image, 
-                    output_path: str, 
-                    prompt: str, 
-                    negative_prompt: str, 
-                    steps: int, 
-                    guidance_scale: float, 
-                    seed_value: Union[str, int], 
-                    freeu_args: Optional[Dict[str, float]], 
-                    lora_path: Optional[str]) -> None:
-        """Saves the generated image with PNG metadata and registers it in the database."""
+    def _save_image(self, image: Image.Image, output_path: str, prompt: str, negative_prompt: str, 
+                    steps: int, guidance_scale: float, seed_value: Union[str, int], 
+                    freeu_args: Optional[Dict[str, float]], lora_path: Optional[str]) -> None:
         metadata = PngInfo()
         parameters_txt = (
             f"{prompt}\nNegative prompt: {negative_prompt}\n"
@@ -180,125 +153,111 @@ class T2IEngine:
         )
         metadata.add_text("parameters", parameters_txt)
         metadata.add_text("Software", "Kami - Local SDXL Station")
-        
         try:
             image.save(output_path, pnginfo=metadata)
             logger.info(f"Image saved to: {output_path}")
-            
-            # DB Update
-            add_image_record(
-                path=output_path,
-                prompt=prompt,
-                neg=negative_prompt,
-                model=os.path.basename(self.base_model_id),
-                steps=steps,
-                cfg=guidance_scale,
-                seed=seed_value
-            )
+            add_image_record(path=output_path, prompt=prompt, neg=negative_prompt, model=os.path.basename(self.base_model_id),
+                             steps=steps, cfg=guidance_scale, seed=seed_value)
         except Exception as e:
             logger.error(f"Failed to save image or update DB: {e}")
 
-    def generate(self, 
-                 prompt: str, 
-                 negative_prompt: str = "", 
-                 steps: int = 30, 
-                 guidance_scale: float = 7.5, 
-                 seed: Optional[int] = None, 
-                 use_refiner: bool = False, 
-                 lora_path: Optional[str] = None, 
-                 lora_scale: float = 1.0, 
-                 freeu_args: Optional[Dict[str, float]] = None) -> str:
-        """
-        Main generation entry point. Thread-safe using self.lock.
+    def abort_generation(self):
+        """Signals the engine to abort the current generation."""
+        logger.info("Abort signal received.")
+        self.abort_event.set()
+
+    def generate(self, prompt: str, negative_prompt: str = "", steps: int = 30, guidance_scale: float = 7.5, 
+                 seed: Optional[int] = None, use_refiner: bool = False, lora_path: Optional[str] = None, 
+                 lora_scale: float = 1.0, freeu_args: Optional[Dict[str, float]] = None,
+                 progress_callback: Optional[Callable[[int, int], None]] = None) -> str:
         
-        Returns:
-            str: The file path of the generated image.
-        """
-        # Acquire lock to ensure only one generation happens at a time
         if not self.lock.acquire(blocking=False):
             logger.warning("Engine is busy. Waiting for lock...")
             self.lock.acquire()
             
         try:
+            self.abort_event.clear()
             output_path = self._create_output_path(prompt, use_refiner, lora_path)
-            
             self.load_base_model(lora_path) 
             if use_refiner: self.load_refiner_model()
 
-            if self.base_pipeline is None:
-                raise RuntimeError("Base pipeline failed to initialize")
+            if self.base_pipeline is None: raise RuntimeError("Base pipeline failed to initialize")
 
-            # Apply FreeU settings
             if freeu_args:
-                self.base_pipeline.enable_freeu(
-                    s1=freeu_args.get('s1', 0.9), s2=freeu_args.get('s2', 0.2), 
-                    b1=freeu_args.get('b1', 1.3), b2=freeu_args.get('b2', 1.4)
-                )
+                self.base_pipeline.enable_freeu(s1=freeu_args.get('s1', 0.9), s2=freeu_args.get('s2', 0.2), b1=freeu_args.get('b1', 1.3), b2=freeu_args.get('b2', 1.4))
             else:
                 self.base_pipeline.disable_freeu()
 
             generator = torch.Generator("cpu").manual_seed(seed) if seed is not None else None
             seed_value = str(seed) if seed is not None else "Random"
 
-            logger.info(f"Starting Generation: '{prompt[:50]}...' (Seed: {seed_value})")
+            logger.info(f"Starting Generation: '{prompt[:50]}...'")
             
+            # --- CALLBACK WRAPPER FOR PROGRESS & CANCELLATION ---
+            def step_callback(pipe, step_index, timestep, callback_kwargs):
+                if self.abort_event.is_set():
+                    raise GenerationCancelled("User cancelled generation.")
+                
+                if progress_callback:
+                    # step_index starts at 0
+                    progress_callback(step_index + 1, steps)
+                
+                return callback_kwargs
+
             with torch.no_grad():
-                # Compel Long Prompt Handling
-                self.base_pipeline.text_encoder.to(self.device)
-                self.base_pipeline.text_encoder_2.to(self.device)
-                
+                # Compel & Offloading
+                self.base_pipeline.text_encoder.to(self.device); self.base_pipeline.text_encoder_2.to(self.device)
                 compel = CompelForSDXL(self.base_pipeline)
-                if hasattr(compel, 'conditioning_provider'):
-                    compel.conditioning_provider.device = self.device
-                    
+                if hasattr(compel, 'conditioning_provider'): compel.conditioning_provider.device = self.device
                 cond = compel(prompt, negative_prompt=negative_prompt)
-                
-                # Offload encoders to CPU
-                self.base_pipeline.text_encoder.to("cpu")
-                self.base_pipeline.text_encoder_2.to("cpu")
+                self.base_pipeline.text_encoder.to("cpu"); self.base_pipeline.text_encoder_2.to("cpu")
                 del compel; gc.collect(); torch.cuda.empty_cache()
 
                 kwargs = {"scale": lora_scale} if getattr(self.base_pipeline, "has_lora", False) else None
 
+                # Generate
                 if not use_refiner:
                     image = self.base_pipeline(
                         prompt_embeds=cond.embeds, pooled_prompt_embeds=cond.pooled_embeds,
                         negative_prompt_embeds=cond.negative_embeds, negative_pooled_prompt_embeds=cond.negative_pooled_embeds,
-                        num_inference_steps=steps, guidance_scale=guidance_scale, generator=generator, cross_attention_kwargs=kwargs
+                        num_inference_steps=steps, guidance_scale=guidance_scale, generator=generator, cross_attention_kwargs=kwargs,
+                        callback_on_step_end=step_callback
                     ).images[0]
                 else:
                     latents = self.base_pipeline(
                         prompt_embeds=cond.embeds, pooled_prompt_embeds=cond.pooled_embeds,
                         negative_prompt_embeds=cond.negative_embeds, negative_pooled_prompt_embeds=cond.negative_pooled_embeds,
                         num_inference_steps=steps, guidance_scale=guidance_scale, generator=generator,
-                        denoising_end=0.8, output_type="latent", cross_attention_kwargs=kwargs
+                        denoising_end=0.8, output_type="latent", cross_attention_kwargs=kwargs,
+                        callback_on_step_end=step_callback
                     ).images
                     
                     gc.collect(); torch.cuda.empty_cache()
-                    
-                    if self.refiner_pipeline is None:
-                        raise RuntimeError("Refiner pipeline not initialized")
+                    if self.abort_event.is_set(): raise GenerationCancelled("Cancelled before refiner.")
+                    if self.refiner_pipeline is None: raise RuntimeError("Refiner pipeline not initialized")
 
                     image = self.refiner_pipeline(
                         prompt=prompt, negative_prompt=negative_prompt, num_inference_steps=steps, 
-                        guidance_scale=guidance_scale, generator=generator, denoising_start=0.8, image=latents
+                        guidance_scale=guidance_scale, generator=generator, denoising_start=0.8, image=latents,
+                        callback_on_step_end=step_callback
                     ).images[0]
 
                 self._save_image(image, output_path, prompt, negative_prompt, steps, guidance_scale, seed_value, freeu_args, lora_path)
             
             return output_path
             
+        except GenerationCancelled:
+            logger.info("Generation cancelled by user.")
+            raise # Re-raise to be caught in main.py
         except Exception as e:
             logger.error(f"Generation failed: {e}")
             raise
         finally:
             self.lock.release()
             gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            if torch.cuda.is_available(): torch.cuda.empty_cache()
 
     def cleanup(self) -> None:
-        """Fully unloads models and clears VRAM."""
         self.base_pipeline = None; self.refiner_pipeline = None; self.vae = None
         gc.collect(); torch.cuda.empty_cache()
         logger.info("Engine cleanup complete.")

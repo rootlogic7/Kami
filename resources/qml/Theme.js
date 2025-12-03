@@ -12,7 +12,8 @@ var SURFACE2 = "#585b70";
 var TEXT = "#cdd6f4";
 var SUBTEXT0 = "#a6adc8";
 var SUBTEXT1 = "#bac2de";
-var OVERLAY0 = "#6c7086"; // <--- NEU HINZUGEFÜGT
+var OVERLAY0 = "#6c7086";
+var OVERLAY1 = "#7f849c";
 
 var BLUE = "#89b4fa";
 var LAVENDER = "#b4befe";

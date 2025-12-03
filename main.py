@@ -9,13 +9,13 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtCore import QObject, Slot, Signal, QUrl
 
 # Import backend modules
-from app.engine import T2IEngine
+from app.engine import T2IEngine, GenerationCancelled
 from app.server import start_server_thread
 from app.utils import get_file_list
 from app.config import SessionConfig
 import app.server as server_module
 
-# Import all database functions
+# Import DB functions
 from app.database import (
     get_filtered_images, delete_image_record, get_all_models,
     add_character, get_characters, delete_character, update_character,
@@ -27,205 +27,134 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger("Main")
 
 class KamiBridge(QObject):
-    """
-    Bridge class to expose Python logic to QML.
-    Inherits from QObject to allow Signal/Slot communication.
-    """
     
-    # Signals to update the UI asynchronously
+    # Signals
     generationFinished = Signal(str, arguments=['path'])
     errorOccurred = Signal(str, arguments=['message'])
     statusUpdated = Signal(str, arguments=['message'])
+    # NEW: Progress signal (current step, total steps)
+    progressChanged = Signal(int, int, arguments=['step', 'total'])
 
     def __init__(self, engine: T2IEngine, config: SessionConfig):
         super().__init__()
         self.engine = engine
         self.config = config
 
-    # --- Configuration Management ---
-
+    # --- Config ---
     @Slot(result="QVariantMap")
     def get_config(self):
-        """Returns the current configuration as a dictionary for QML."""
         return {
-            "steps": self.config.steps,
-            "guidance": self.config.guidance,
-            "neg_prompt": self.config.neg_prompt,
-            "model_path": self.config.model_path,
-            "lora_path": self.config.lora_path,
-            "lora_scale": self.config.lora_scale,
-            "use_refiner": self.config.use_refiner,
-            "pony_mode": self.config.pony_mode,
-            "use_freeu": self.config.use_freeu,
+            "steps": self.config.steps, "guidance": self.config.guidance, "neg_prompt": self.config.neg_prompt,
+            "model_path": self.config.model_path, "lora_path": self.config.lora_path, "lora_scale": self.config.lora_scale,
+            "use_refiner": self.config.use_refiner, "pony_mode": self.config.pony_mode, "use_freeu": self.config.use_freeu,
         }
 
     @Slot(str, "QVariant")
     def set_config_value(self, key: str, value):
-        """Updates a single configuration value and persists it to disk."""
         if hasattr(self.config, key):
-            logger.info(f"Updating config: {key} = {value}")
             setattr(self.config, key, value)
             self.config.save_session_state()
-        else:
-            logger.warning(f"Attempted to set invalid config key: {key}")
 
-    # --- Resources (Models/LoRAs) ---
-
+    # --- Resources ---
     @Slot(result=list)
     def get_models(self):
-        """Returns a list of available checkpoint models."""
-        checkpoints_dir = "models/checkpoints"
-        models = get_file_list(checkpoints_dir)
-        return ["stabilityai/stable-diffusion-xl-base-1.0"] + models
+        return ["stabilityai/stable-diffusion-xl-base-1.0"] + get_file_list("models/checkpoints")
 
     @Slot(result=list)
     def get_loras(self):
-        """Returns a list of available LoRA models."""
-        loras_dir = "models/loras"
-        loras = get_file_list(loras_dir)
-        return ["None"] + loras
+        return ["None"] + get_file_list("models/loras")
     
-    # --- Gallery Management ---
-
+    # --- Gallery & DB ---
     @Slot(str, str, str, int, int, result=list)
-    def get_gallery_images(self, search_text: str, sort_by: str, model_filter: str, limit: int, offset: int):
-        """Retrieves a paginated list of images from the DB."""
+    def get_gallery_images(self, search_text, sort_by, model_filter, limit, offset):
         try:
             rows = get_filtered_images(search_text, sort_by, model_filter)
-            # Slicing for pagination
-            start = offset
-            end = offset + limit
-            sliced = rows[start:end]
-            
+            start = offset; end = offset + limit; sliced = rows[start:end]
             results = []
             for row in sliced:
                 data = dict(row)
-                if not os.path.isabs(data['path']):
-                    data['path'] = os.path.abspath(data['path'])
+                if not os.path.isabs(data['path']): data['path'] = os.path.abspath(data['path'])
                 results.append(data)
             return results
         except Exception as e:
-            logger.error(f"Error fetching gallery images: {e}")
-            return []
+            logger.error(f"Error: {e}"); return []
 
     @Slot(result=list)
-    def get_db_models(self):
-        """Returns a list of unique models used in the database history."""
-        return ["All Models"] + get_all_models()
+    def get_db_models(self): return ["All Models"] + get_all_models()
 
     @Slot(str, result=bool)
-    def delete_image(self, path: str):
-        """Deletes an image from disk and database."""
-        try:
-            if os.path.exists(path):
-                os.remove(path)
-            else:
-                logger.warning(f"File not found on disk: {path}")
-            return delete_image_record(path)
-        except Exception as e:
-            logger.error(f"Failed to delete image {path}: {e}")
-            return False
+    def delete_image(self, path): 
+        if os.path.exists(path): os.remove(path)
+        return delete_image_record(path)
 
-    # --- Character Registry ---
-
+    # --- Characters ---
     @Slot(result=list)
-    def get_characters(self):
-        """Returns all characters from the database."""
-        return get_characters()
-
+    def get_characters(self): return get_characters()
     @Slot(str, str, str, str, str, str, float, result=bool)
-    def add_character(self, name: str, description: str, trigger_words: str, preview_path: str, notes: str, default_lora: str, lora_scale: float):
-        """Adds a new character with LoRA settings."""
-        return add_character(name, description, trigger_words, preview_path, notes, default_lora, lora_scale)
-
+    def add_character(self, n, d, t, p, no, l, ls): return add_character(n, d, t, p, no, l, ls)
     @Slot(int, str, str, str, str, str, str, float, result=bool)
-    def update_character(self, char_id: int, name: str, description: str, trigger_words: str, preview_path: str, notes: str, default_lora: str, lora_scale: float):
-        """Updates an existing character with LoRA settings."""
-        return update_character(char_id, name, description, trigger_words, preview_path, notes, default_lora, lora_scale)
-
+    def update_character(self, id, n, d, t, p, no, l, ls): return update_character(id, n, d, t, p, no, l, ls)
     @Slot(int, result=bool)
-    def delete_character(self, char_id: int):
-        """Deletes a character by ID."""
-        return delete_character(char_id)
+    def delete_character(self, id): return delete_character(id)
 
-    # --- Generation Presets ---
-
+    # --- Presets ---
     @Slot(result=list)
-    def get_presets(self):
-        """Returns all presets from the database."""
-        return get_presets()
-
+    def get_presets(self): return get_presets()
     @Slot(str, str, str, float, int, float, str, str, result=bool)
-    def add_preset(self, name: str, model: str, lora: str, lora_scale: float, steps: int, cfg: float, prompt: str, neg: str):
-        """Adds a new generation preset."""
-        return add_preset(name, model, lora, lora_scale, steps, cfg, prompt, neg)
-
+    def add_preset(self, n, m, l, ls, s, c, p, ng): return add_preset(n, m, l, ls, s, c, p, ng)
     @Slot(int, result=bool)
-    def delete_preset(self, preset_id: int):
-        """Deletes a preset by ID."""
-        return delete_preset(preset_id)
+    def delete_preset(self, id): return delete_preset(id)
 
-    # --- Generation ---
+    # --- Generation Control ---
+
+    @Slot()
+    def cancel(self):
+        """Stops the current generation process."""
+        logger.info("UI requested cancellation.")
+        self.engine.abort_generation()
 
     @Slot(str, str, int, float, str, bool, str, str, float)
     def generate(self, prompt: str, neg_prompt: str, steps: int, cfg: float, seed_str: str, 
                  use_refiner: bool, model_name: str, lora_name: str, lora_scale: float):
-        """Main generation slot called from QML."""
+        
         logger.info(f"UI requested generation: '{prompt[:30]}...'")
         self.statusUpdated.emit("Starting generation...")
         
-        # 1. Resolve Model Path
-        real_model_path = model_name
-        if model_name != "stabilityai/stable-diffusion-xl-base-1.0":
-             real_model_path = os.path.join("models/checkpoints", model_name)
-
-        # 2. Resolve LoRA Path
-        real_lora_path = None
-        if lora_name and lora_name != "None":
-             real_lora_path = os.path.join("models/loras", lora_name)
-
-        # 3. Parse Seed
+        real_model_path = model_name if model_name == "stabilityai/stable-diffusion-xl-base-1.0" else os.path.join("models/checkpoints", model_name)
+        real_lora_path = os.path.join("models/loras", lora_name) if lora_name and lora_name != "None" else None
+        
         seed: Optional[int] = None
         if seed_str.strip():
-            try:
-                seed = int(seed_str)
-            except ValueError:
-                logger.warning(f"Invalid seed '{seed_str}', using random.")
+            try: seed = int(seed_str)
+            except: pass
         
-        # 4. Check for Pony Mode
-        final_prompt = prompt
-        final_neg = neg_prompt
-        
-        if self.config.pony_mode:
-            logger.info("Applying Pony Diffusion prefixes...")
-            final_prompt = self.config.pony_prefix + prompt
-            if "score_4" not in neg_prompt:
-                final_neg = self.config.pony_neg + neg_prompt
-
-        # 5. Prepare FreeU Args
+        final_prompt = (self.config.pony_prefix + prompt) if self.config.pony_mode else prompt
+        final_neg = (self.config.pony_neg + neg_prompt) if (self.config.pony_mode and "score_4" not in neg_prompt) else neg_prompt
         freeu_args = self.config.freeu_args if self.config.use_freeu else None
         
         def run_job():
             try:
-                # Handle Model Switching
                 if self.engine.base_model_id != real_model_path:
-                    logger.info(f"Switching model from '{self.engine.base_model_id}' to '{real_model_path}'")
+                    logger.info("Switching model...")
                     self.engine.base_model_id = real_model_path
                     self.engine.base_pipeline = None 
                 
+                # Helper to emit progress
+                def on_progress(step, total):
+                    self.progressChanged.emit(step, total)
+
                 path = self.engine.generate(
-                    prompt=final_prompt,
-                    negative_prompt=final_neg,
-                    steps=steps,
-                    guidance_scale=cfg,
-                    seed=seed,
-                    use_refiner=use_refiner,
-                    lora_path=real_lora_path,
-                    lora_scale=lora_scale,
-                    freeu_args=freeu_args
+                    prompt=final_prompt, negative_prompt=final_neg, steps=steps, guidance_scale=cfg,
+                    seed=seed, use_refiner=use_refiner, lora_path=real_lora_path, lora_scale=lora_scale,
+                    freeu_args=freeu_args, progress_callback=on_progress
                 )
                 self.generationFinished.emit(path)
                 self.statusUpdated.emit("Ready")
+            except GenerationCancelled:
+                logger.info("Worker: Generation cancelled.")
+                self.statusUpdated.emit("Cancelled")
+                # We emit finished with empty path to reset UI state if needed, or handle via status
+                self.generationFinished.emit("") 
             except Exception as e:
                 logger.error(f"Generation failed: {e}")
                 self.errorOccurred.emit(str(e))
@@ -239,42 +168,24 @@ def main():
     app.setOrganizationDomain("kami.local")
     app.setApplicationName("Kami")
 
-    # 1. Initialize Configuration
     logger.info("Loading Session Config...")
     config = SessionConfig()
-
-    # 2. Initialize the AI Engine
     logger.info("Initializing T2I Engine...")
     engine = T2IEngine()
     
-    # 3. Share engine and config with the API Server
-    server_module.shared_engine = engine
-    server_module.shared_config = config 
+    server_module.shared_engine = engine; server_module.shared_config = config 
 
-    # 4. Start API Server in background thread
     logger.info("Starting API Server...")
-    server_thread = threading.Thread(
-        target=start_server_thread, 
-        kwargs={'host': '0.0.0.0', 'port': 8000},
-        daemon=True
-    )
-    server_thread.start()
+    threading.Thread(target=start_server_thread, kwargs={'host': '0.0.0.0', 'port': 8000}, daemon=True).start()
 
-    # 5. Setup QML Engine
     qml_engine = QQmlApplicationEngine()
-    
     bridge = KamiBridge(engine, config)
     qml_engine.rootContext().setContextProperty("backend", bridge)
 
-    qml_path = "resources/qml/main.qml"
-    qml_engine.load(QUrl.fromLocalFile(qml_path))
-
-    if not qml_engine.rootObjects():
-        logger.error("Failed to load QML.")
-        sys.exit(-1)
+    qml_engine.load(QUrl.fromLocalFile("resources/qml/main.qml"))
+    if not qml_engine.rootObjects(): sys.exit(-1)
 
     logger.info("Kami Hybrid started. GUI is ready.")
-    
     sys.exit(app.exec())
 
 if __name__ == "__main__":
