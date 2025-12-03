@@ -133,15 +133,15 @@ class KamiBridge(QObject):
         """Returns all characters from the database."""
         return get_characters()
 
-    @Slot(str, str, str, str, str, result=bool)
-    def add_character(self, name: str, description: str, trigger_words: str, preview_path: str, notes: str):
-        """Adds a new character."""
-        return add_character(name, description, trigger_words, preview_path, notes)
+    @Slot(str, str, str, str, str, str, float, result=bool)
+    def add_character(self, name: str, description: str, trigger_words: str, preview_path: str, notes: str, default_lora: str, lora_scale: float):
+        """Adds a new character with LoRA settings."""
+        return add_character(name, description, trigger_words, preview_path, notes, default_lora, lora_scale)
 
-    @Slot(int, str, str, str, str, str, result=bool)
-    def update_character(self, char_id: int, name: str, description: str, trigger_words: str, preview_path: str, notes: str):
-        """Updates an existing character."""
-        return update_character(char_id, name, description, trigger_words, preview_path, notes)
+    @Slot(int, str, str, str, str, str, str, float, result=bool)
+    def update_character(self, char_id: int, name: str, description: str, trigger_words: str, preview_path: str, notes: str, default_lora: str, lora_scale: float):
+        """Updates an existing character with LoRA settings."""
+        return update_character(char_id, name, description, trigger_words, preview_path, notes, default_lora, lora_scale)
 
     @Slot(int, result=bool)
     def delete_character(self, char_id: int):

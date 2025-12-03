@@ -161,16 +161,18 @@ def get_all_models() -> List[str]:
 
 # --- CHARACTER OPERATIONS ---
 
-def add_character(name: str, description: str, trigger_words: str, preview_path: str = "", notes: str = "") -> bool:
-    """Adds a new character to the registry."""
+# --- CHARACTER OPERATIONS ---
+
+def add_character(name: str, description: str, trigger_words: str, preview_path: str = "", notes: str = "", default_lora: str = "None", lora_scale: float = 0.8) -> bool:
+    """Adds a new character to the registry including LoRA settings."""
     try:
         conn = sqlite3.connect(DB_FILE)
         with conn:
             c = conn.cursor()
             c.execute('''
-                INSERT INTO characters (name, description, trigger_words, preview_path, notes)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (name, description, trigger_words, preview_path, notes))
+                INSERT INTO characters (name, description, trigger_words, preview_path, notes, default_lora, lora_scale)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (name, description, trigger_words, preview_path, notes, default_lora, lora_scale))
         logger.info(f"Added character: {name}")
         return True
     except sqlite3.IntegrityError:
@@ -188,6 +190,7 @@ def get_characters() -> List[Dict[str, Any]]:
     conn.row_factory = sqlite3.Row
     try:
         c = conn.cursor()
+        # Ensure we select all columns, including new ones
         c.execute("SELECT * FROM characters ORDER BY name ASC")
         return [dict(row) for row in c.fetchall()]
     finally:
@@ -204,7 +207,7 @@ def delete_character(char_id: int) -> bool:
     finally:
         if 'conn' in locals(): conn.close()
 
-def update_character(char_id: int, name: str, description: str, trigger_words: str, preview_path: str, notes: str) -> bool:
+def update_character(char_id: int, name: str, description: str, trigger_words: str, preview_path: str, notes: str, default_lora: str, lora_scale: float) -> bool:
     """Updates an existing character."""
     try:
         conn = sqlite3.connect(DB_FILE)
@@ -212,9 +215,9 @@ def update_character(char_id: int, name: str, description: str, trigger_words: s
             c = conn.cursor()
             c.execute('''
                 UPDATE characters 
-                SET name=?, description=?, trigger_words=?, preview_path=?, notes=?
+                SET name=?, description=?, trigger_words=?, preview_path=?, notes=?, default_lora=?, lora_scale=?
                 WHERE id=?
-            ''', (name, description, trigger_words, preview_path, notes, char_id))
+            ''', (name, description, trigger_words, preview_path, notes, default_lora, lora_scale, char_id))
         return True
     except Exception as e:
         logger.error(f"Error updating character: {e}")
